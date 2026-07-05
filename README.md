@@ -10,6 +10,9 @@
 - 走到自己宠物身边会浮出贴身互动 chips（喂食 / 抚摸 / 玩具 / 清理 / 聊天）；离得远时可以"呼唤"它自己跑过来
 - 新增成长循环：每次照顾累积 growth XP 和羁绊 bond，宠物会从「数据幼体」进化到「同步体」再到「觉醒体」，体型和 HUD 都会变化
 - 走到分区东西两侧的霓虹传送门可以直接步行切换分区；原先环绕画布的分析面板收进了可折叠的「世界监控台」
+- 上传照片时会在浏览器里采样主色调，生成的像素形象直接穿上宠物真实的毛色（宠物详情页也有"按照片配色重新生成"）
+- 喂食会让宠物当场停下来吃并冒台词气泡，抚摸/玩具/清理都有 emoji 反馈粒子从宠物头上升起
+- 便便是动态的（膀胱满了就会拉），走到任何一坨旁边都会浮出「🧹 铲屎」按钮，清自己宠物的还加羁绊
 
 ## 当前实现
 
@@ -41,6 +44,7 @@
   - `POST /api/pets/:petId/generations`
   - `GET /api/garden/snapshot`
   - `POST /api/garden/presence`
+  - `POST /api/garden/objects/clean`
   - `POST /api/pets/:petId/actions`
   - `GET /api/pets/:petId/journal`
   - `GET /api/me/pets/status`
@@ -74,6 +78,16 @@ npm run dev
 ```
 
 如果你本地已经启动了 OpenAI-compatible 的 Qwen 服务，当前项目只会调用外部服务，不会再从项目内部拉起 bridge 或模型进程。
+
+## 切换 LLM：本地 Qwen / Kimi / mock
+
+项目只有一个通用的 OpenAI-compatible 客户端（`lib/ai/llm-provider.ts`），`LLM_BASE_URL` 指到哪就用哪个模型：
+
+- **本地 Qwen（MLX 等）**：默认配置。必须先把本地服务跑起来（`http://127.0.0.1:8888/v1`），否则所有 LLM 调用会超时。
+- **Kimi（Moonshot）**：把 `LLM_BASE_URL` 换成 `https://api.moonshot.cn/v1`（海外 `https://api.moonshot.ai/v1`），填上平台的 `LLM_API_KEY`，四个 `LLM_MODEL_*` 填 `kimi-k2.5`。代码里对 `kimi-k2.5` 有专门适配：自动带 `thinking: {type:"disabled"}`、不传 temperature。
+- **mock**：`LLM_PROVIDER=mock`，完全离线固定回复。
+
+重要：**LLM 服务不可达时聊天不会报错，而是回落到内置的正则模板回复**（`fallbackChatReply`），所以你会看到宠物翻来覆去说同样几句话。看到重复台词 = 先检查本地模型服务有没有起来，或者 `LLM_BASE_URL` 是否可达。切换 `.env.local` 后需要重启 `npm run dev`。
 
 当前默认接入配置：
 

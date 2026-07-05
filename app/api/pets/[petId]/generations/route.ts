@@ -45,8 +45,8 @@ export async function POST(
 
     const totalGenerations = await countGenerationsForPet(petId);
 
-    if (totalGenerations >= 2) {
-      return jsonError("第一版每只宠物最多生成 2 次。", 400);
+    if (totalGenerations >= 4) {
+      return jsonError("每只宠物最多生成 4 次。", 400);
     }
 
     const sourcePhoto = payload.sourcePhotoId
@@ -63,6 +63,7 @@ export async function POST(
       imagePath: sourcePhoto.storagePath,
       species: pet.species,
       promptSeed,
+      palette: sourcePhoto.palette,
     });
 
     const generation = await createGeneration({

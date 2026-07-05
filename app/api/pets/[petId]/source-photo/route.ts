@@ -14,6 +14,26 @@ const paramsSchema = z.object({
   petId: z.string(),
 });
 
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const paletteSchema = z.object({
+  fur: hexColor,
+  stripe: hexColor,
+  inner: hexColor,
+  accent: hexColor,
+});
+
+function parsePalette(raw: FormDataEntryValue | null) {
+  if (typeof raw !== "string" || !raw.trim()) {
+    return undefined;
+  }
+
+  try {
+    return paletteSchema.parse(JSON.parse(raw));
+  } catch {
+    return undefined;
+  }
+}
+
 export const runtime = "nodejs";
 
 export async function POST(
@@ -63,6 +83,7 @@ export async function POST(
       mimeType: file.type,
       sizeBytes: file.size,
       originalFilename: file.name,
+      palette: parsePalette(formData.get("palette")),
     });
 
     await trackServerEvent({

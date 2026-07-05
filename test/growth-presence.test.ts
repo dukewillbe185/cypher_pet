@@ -14,6 +14,7 @@ import {
   advanceStoreToNow,
   applyOwnerActionToStore,
   buildGardenSnapshot,
+  cleanPoopObjectInStore,
   freshOwnerPresence,
 } from "@/lib/domain/simulation";
 import { seedStore } from "@/lib/mock/seed";
@@ -119,6 +120,62 @@ describe("owner actions feed growth", () => {
       expect(entry.growth).toBeDefined();
       expect(entry.growth!.stageLabel.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("walk-up poop cleaning", () => {
+  function storeWithPoop(ownerId: string) {
+    const store = cloneStore();
+    const pet = store.pets.find((entry) => entry.ownerId === ownerId && !entry.isFrozen)!;
+    const state = store.petStates.find((entry) => entry.petId === pet.id)!;
+
+    store.worldObjects.push({
+      id: "poop-test-1",
+      type: "poop",
+      zoneId: state.zoneId,
+      tileX: state.tileX,
+      tileY: state.tileY,
+      petId: pet.id,
+      createdAt: new Date().toISOString(),
+    });
+
+    return { store, pet, state };
+  }
+
+  it("removes the poop and rewards the owner's bond", () => {
+    const { store, pet, state } = storeWithPoop("profile-luna");
+    const viewer = store.profiles.find((entry) => entry.id === "profile-luna")!;
+    ensureGrowthState(state);
+    const xpBefore = state.growthXp ?? 0;
+
+    const result = cleanPoopObjectInStore(store, { viewer, objectId: "poop-test-1" });
+
+    expect(result.ownedByViewer).toBe(true);
+    expect(result.petId).toBe(pet.id);
+    expect(store.worldObjects.find((entry) => entry.id === "poop-test-1")?.removedAt).toBeTruthy();
+    expect(state.growthXp).toBeGreaterThan(xpBefore);
+  });
+
+  it("lets a passer-by clean without a growth award", () => {
+    const { store, state } = storeWithPoop("profile-luna");
+    const viewer = store.profiles.find((entry) => entry.id === "profile-mars")!;
+    ensureGrowthState(state);
+    const xpBefore = state.growthXp ?? 0;
+
+    const result = cleanPoopObjectInStore(store, { viewer, objectId: "poop-test-1" });
+
+    expect(result.ownedByViewer).toBe(false);
+    expect(state.growthXp).toBe(xpBefore);
+    expect(store.worldObjects.find((entry) => entry.id === "poop-test-1")?.removedAt).toBeTruthy();
+  });
+
+  it("rejects already-removed or missing objects", () => {
+    const { store } = storeWithPoop("profile-luna");
+    const viewer = store.profiles.find((entry) => entry.id === "profile-luna")!;
+
+    cleanPoopObjectInStore(store, { viewer, objectId: "poop-test-1" });
+    expect(() => cleanPoopObjectInStore(store, { viewer, objectId: "poop-test-1" })).toThrow();
+    expect(() => cleanPoopObjectInStore(store, { viewer, objectId: "missing" })).toThrow();
   });
 });
 

@@ -227,6 +227,26 @@ export function GardenExperience({
     setChatOpen(true);
   }
 
+  async function handleCleanPoop(objectId: string) {
+    if (!viewer) {
+      setError("先登录才能帮忙清理。");
+      return;
+    }
+
+    try {
+      setError(null);
+      const response = await fetch("/api/garden/objects/clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objectId }),
+      });
+      await readJsonResponse(response, "清理失败。");
+      await refreshCurrentZone();
+    } catch (cleanError) {
+      setError(cleanError instanceof Error ? cleanError.message : "清理失败。");
+    }
+  }
+
   function handlePlayerTileChange(tileX: number, tileY: number) {
     playerTileRef.current = { tileX, tileY };
   }
@@ -262,6 +282,7 @@ export function GardenExperience({
         <div className={`space-y-3 ${isSwitchingZone ? "smooth-fade" : ""}`}>
           <GardenCanvas
             autonomyOverlays={autonomyOverlays}
+            onCleanPoop={handleCleanPoop}
             onOpenChat={handleOpenChat}
             onOwnerAction={handleProximityOwnerAction}
             onPlayerTileChange={handlePlayerTileChange}

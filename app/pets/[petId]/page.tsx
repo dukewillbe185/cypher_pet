@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
-import { OwnerActionButtons, ReportForm } from "@/components/forms/cyber-forms";
+import { OwnerActionButtons, RegeneratePetSpriteForm, ReportForm } from "@/components/forms/cyber-forms";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { getViewerContext } from "@/lib/auth";
@@ -380,7 +380,10 @@ export default async function PetPage({ params }: PetPageProps) {
         <Card className="space-y-5">
           <h2 className="text-2xl font-semibold text-white">{isOwner ? "你可以做的事" : "管理与反馈"}</h2>
           {isOwner ? (
-            <OwnerActionButtons petId={details.pet.id} />
+            <div className="space-y-6">
+              <OwnerActionButtons petId={details.pet.id} />
+              <RegeneratePetSpriteForm petId={details.pet.id} />
+            </div>
           ) : (
             <ReportForm targetId={details.pet.id} targetType="pet" />
           )}

@@ -2111,6 +2111,53 @@ export function buildGardenSnapshot(
   };
 }
 
+/** Cleans a specific poop object the player walked up to; anyone may help. */
+export function cleanPoopObjectInStore(
+  store: AppStore,
+  input: { viewer: Profile; objectId: string },
+) {
+  const object = store.worldObjects.find((entry) => entry.id === input.objectId);
+
+  if (!object || object.type !== "poop" || object.removedAt) {
+    throw new Error("poop-not-found");
+  }
+
+  object.removedAt = new Date().toISOString();
+
+  const pet = object.petId ? store.pets.find((entry) => entry.id === object.petId) : undefined;
+  const state = pet ? store.petStates.find((entry) => entry.petId === pet.id) : undefined;
+  const ownedByViewer = Boolean(pet && pet.ownerId === input.viewer.id);
+
+  if (pet && state) {
+    state.hygiene = clamp(state.hygiene + 10);
+
+    if (ownedByViewer) {
+      applyGrowthAward(state, ownerActionGrowthAward("clean_poop"));
+      state.currentBubble = {
+        text: "谢谢铲屎官。",
+        kind: "speech",
+        expiresAt: new Date(Date.now() + BUBBLE_DURATION_MS).toISOString(),
+      };
+    }
+
+    createEvent(store, {
+      petId: pet.id,
+      zoneId: object.zoneId,
+      type: "owner_action",
+      body: ownedByViewer
+        ? `${input.viewer.displayName} 顺手清掉了 ${pet.name} 留下的残局。`
+        : `${input.viewer.displayName} 路过时帮 ${pet.name} 清理了现场。`,
+    });
+  }
+
+  return {
+    objectId: object.id,
+    petId: pet?.id,
+    petName: pet?.name,
+    ownedByViewer,
+  };
+}
+
 export function applyOwnerActionToStore(
   store: AppStore,
   input: {
@@ -2136,17 +2183,31 @@ export function applyOwnerActionToStore(
     state.hunger = clamp(state.hunger - 26);
     state.stress = clamp(state.stress - 6);
     state.social = clamp(state.social + 4);
+    // Food is dropped right at the pet's feet: it stops and visibly eats.
+    state.activity = "eat";
+    state.actionEndsAt = new Date(Date.now() + 9000).toISOString();
+    state.currentBubble = {
+      text: input.pet.species === "cat" ? "咔嚓咔嚓…" : "开饭!!",
+      kind: "speech",
+      expiresAt: new Date(Date.now() + 7000).toISOString(),
+    };
     summary = `${input.owner.displayName} 给 ${input.pet.name} 喂了点零食。`;
   }
 
   if (input.action === "pet") {
     state.stress = clamp(state.stress - 14);
     state.social = clamp(state.social + 8);
+    state.currentBubble = {
+      text: input.pet.species === "cat" ? "咕噜咕噜…" : "再摸一会儿嘛。",
+      kind: "speech",
+      expiresAt: new Date(Date.now() + BUBBLE_DURATION_MS).toISOString(),
+    };
     summary = `${input.owner.displayName} 摸了摸 ${input.pet.name}。`;
   }
 
   if (input.action === "throw_toy") {
     state.activity = input.pet.species === "dog" ? "chase" : "play";
+    state.actionEndsAt = new Date(Date.now() + 12000).toISOString();
     state.social = clamp(state.social + 10);
     state.stress = clamp(state.stress - 8);
     rememberPet(store, {
@@ -2171,6 +2232,11 @@ export function applyOwnerActionToStore(
 
     state.hygiene = clamp(state.hygiene + 18);
     state.stress = clamp(state.stress - 5);
+    state.currentBubble = {
+      text: "谢谢铲屎官。",
+      kind: "speech",
+      expiresAt: new Date(Date.now() + BUBBLE_DURATION_MS).toISOString(),
+    };
     summary = `${input.owner.displayName} 替 ${input.pet.name} 清理了现场。`;
   }
 

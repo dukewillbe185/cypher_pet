@@ -108,6 +108,25 @@ a {
   image-rendering: crisp-edges;
 }
 
+@keyframes garden-burst-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.7);
+  }
+  16% {
+    opacity: 1;
+    transform: translate(-50%, -8px) scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -54px) scale(1);
+  }
+}
+
+.garden-action-burst {
+  animation: garden-burst-rise 1.6s ease-out forwards;
+}
+
 .ui-skeleton {
   position: relative;
   overflow: hidden;

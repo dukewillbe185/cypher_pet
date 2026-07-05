@@ -1720,6 +1720,7 @@ export function GardenCanvas({
   onOpenChat,
   onTravel,
   onPlayerTileChange,
+  onCleanPoop,
   travelLocked,
   viewerId,
   viewerName,
@@ -1737,6 +1738,7 @@ export function GardenCanvas({
   onOpenChat?: (petId: string) => void;
   onTravel?: (zoneId: GardenZoneId) => void;
   onPlayerTileChange?: (tileX: number, tileY: number) => void;
+  onCleanPoop?: (objectId: string) => void;
   travelLocked?: boolean;
   viewerId?: string;
   viewerName?: string;
@@ -1779,6 +1781,21 @@ export function GardenCanvas({
     holdActive: boolean;
   } | null>(null);
   const pendingSpawnRef = useRef<TilePoint | null>(null);
+
+  const [actionBursts, setActionBursts] = useState<
+    Array<{ id: number; sceneX: number; sceneY: number; emoji: string; label: string }>
+  >([]);
+  const burstIdRef = useRef(0);
+
+  const spawnActionBurst = useCallback((sceneX: number, sceneY: number, emoji: string, label: string) => {
+    burstIdRef.current += 1;
+    const id = burstIdRef.current;
+
+    setActionBursts((current) => [...current, { id, sceneX, sceneY, emoji, label }]);
+    window.setTimeout(() => {
+      setActionBursts((current) => current.filter((burst) => burst.id !== id));
+    }, 1700);
+  }, []);
 
   const spawn = zoneSpawnTile[zoneId];
   const playerRef = useRef<PlayerWorldState>({
@@ -1956,6 +1973,22 @@ export function GardenCanvas({
       .slice(0, 1)
       .map(({ entry }) => entry);
   }, [playerTile.tileX, playerTile.tileY, snapshot.pets, viewerId]);
+
+  // Poops the avatar is standing next to — anyone can help scoop.
+  const nearbyPoops = useMemo(() => {
+    if (!viewerId || !onCleanPoop) {
+      return [];
+    }
+
+    return snapshot.objects
+      .filter(
+        (object) =>
+          object.type === "poop" &&
+          !object.removedAt &&
+          Math.hypot(object.tileX - playerTile.tileX, object.tileY - playerTile.tileY) <= 2.2,
+      )
+      .slice(0, 2);
+  }, [onCleanPoop, playerTile.tileX, playerTile.tileY, snapshot.objects, viewerId]);
 
   const zoneRingIndex = ZONE_TRAVEL_RING.indexOf(zoneId);
   const eastZoneId = ZONE_TRAVEL_RING[(zoneRingIndex + 1) % ZONE_TRAVEL_RING.length];
@@ -2404,6 +2437,8 @@ export function GardenCanvas({
             const ownsPet = Boolean(viewerId && entry.owner.id === viewerId);
             const chipX = toSceneX(entry.state.tileX);
             const chipY = toSceneY(entry.state.tileY) - 118;
+            const burstAt = (emoji: string, label: string) =>
+              spawnActionBurst(chipX, toSceneY(entry.state.tileY) - 58, emoji, label);
 
             return (
               <div
@@ -2422,6 +2457,7 @@ export function GardenCanvas({
                         className="rounded-full border border-amber-200/60 bg-amber-400/20 px-3 py-1.5 text-[11px] font-bold text-amber-50 backdrop-blur-md transition-transform hover:scale-105"
                         onClick={(event) => {
                           event.stopPropagation();
+                          burstAt("🍖", "饱食度回升");
                           onOwnerAction({ petId: entry.pet.id, action: "feed" });
                         }}
                         onPointerDown={(event) => event.stopPropagation()}
@@ -2433,6 +2469,7 @@ export function GardenCanvas({
                         className="rounded-full border border-cyan-200/60 bg-cyan-400/20 px-3 py-1.5 text-[11px] font-bold text-cyan-50 backdrop-blur-md transition-transform hover:scale-105"
                         onClick={(event) => {
                           event.stopPropagation();
+                          burstAt("💚", "羁绊加深");
                           onOwnerAction({ petId: entry.pet.id, action: "pet" });
                         }}
                         onPointerDown={(event) => event.stopPropagation()}
@@ -2444,6 +2481,7 @@ export function GardenCanvas({
                         className="rounded-full border border-lime-200/60 bg-lime-400/20 px-3 py-1.5 text-[11px] font-bold text-lime-50 backdrop-blur-md transition-transform hover:scale-105"
                         onClick={(event) => {
                           event.stopPropagation();
+                          burstAt("🎾", "玩具时间");
                           onOwnerAction({ petId: entry.pet.id, action: "throw_toy" });
                         }}
                         onPointerDown={(event) => event.stopPropagation()}
@@ -2456,6 +2494,7 @@ export function GardenCanvas({
                           className="rounded-full border border-rose-200/60 bg-rose-400/20 px-3 py-1.5 text-[11px] font-bold text-rose-50 backdrop-blur-md transition-transform hover:scale-105"
                           onClick={(event) => {
                             event.stopPropagation();
+                            burstAt("✨", "清理干净");
                             onOwnerAction({ petId: entry.pet.id, action: "clean_poop" });
                           }}
                           onPointerDown={(event) => event.stopPropagation()}
@@ -2495,6 +2534,38 @@ export function GardenCanvas({
               </div>
             );
           })}
+          {nearbyPoops.map((object) => (
+            <button
+              className="pointer-events-auto absolute flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-amber-200/60 bg-[#241505]/90 px-3 py-1.5 text-[11px] font-bold text-amber-100 backdrop-blur-md transition-transform hover:scale-105"
+              data-testid="poop-clean-chip"
+              key={`poop-${object.id}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                spawnActionBurst(toSceneX(object.tileX), toSceneY(object.tileY) - 26, "✨", "清理干净");
+                onCleanPoop?.(object.id);
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              style={{
+                left: `${toSceneX(object.tileX)}px`,
+                top: `${toSceneY(object.tileY) - 44}px`,
+              }}
+              type="button"
+            >
+              🧹 铲屎
+            </button>
+          ))}
+          {actionBursts.map((burst) => (
+            <div
+              className="garden-action-burst pointer-events-none absolute flex flex-col items-center"
+              key={burst.id}
+              style={{ left: `${burst.sceneX}px`, top: `${burst.sceneY}px` }}
+            >
+              <span className="text-3xl leading-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]">{burst.emoji}</span>
+              <span className="mt-1 rounded-full bg-[#0B1E12]/85 px-2 py-0.5 font-mono text-[10px] font-bold text-lime-100">
+                {burst.label}
+              </span>
+            </div>
+          ))}
           <div
             className="pointer-events-none absolute flex -translate-x-1/2 items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-100/85"
             style={{
@@ -2520,6 +2591,12 @@ export function GardenCanvas({
               className="pointer-events-auto rounded-full border border-lime-200/70 bg-[#101F0C]/90 px-5 py-2.5 text-sm font-bold text-lime-100 shadow-[0_14px_44px_rgba(190,242,100,0.25)] backdrop-blur-md transition-transform hover:scale-105"
               onClick={(event) => {
                 event.stopPropagation();
+                spawnActionBurst(
+                  playerRef.current.sceneX,
+                  playerRef.current.sceneY - 70,
+                  "📣",
+                  `呼唤 ${selectedPet.pet.name}`,
+                );
                 onOwnerAction?.({ petId: selectedPet.pet.id, action: "call" });
               }}
               onPointerDown={(event) => event.stopPropagation()}

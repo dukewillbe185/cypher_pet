@@ -1,0 +1,643 @@
+[00:00:00.490] Server  LOG     ✓ Ready in 362ms
+[00:00:20.874] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:25.045] Server  LOG     ✓ Compiled in 321ms
+[00:00:25.308] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:25.308] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:25.308] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:25.889] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:25.889] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:27.887] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:28.764] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:28.764] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:29.738] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:29.738] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:30.896] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:32.275] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:32.275] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:33.780] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:33.780] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:33.900] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:35.762] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:35.762] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:36.917] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:37.266] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:37.266] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:37.745] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:37.745] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:39.281] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:39.281] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:39.888] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:40.935] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:40.935] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:41.730] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:41.730] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:42.768] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:42.768] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:42.895] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:44.610] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:44.610] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:45.758] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:45.758] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:45.907] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:46.226] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]
+[00:00:46.226] Browser ERROR   ./app/globals.css:3749:17
+Parsing CSS source code failed
+  3747 |   }
+  3748 |   .\[\&\:\:-webkit-1\2 �\1 -marker\]\:hidden {
+> 3749 |     &::-webkit-1�-marker {
+       |                 ^
+  3750 |       display: none;
+  3751 |     }
+  3752 |   }
+
+Unexpected token Delim('\u{2}')
+
+Import trace:
+  Client Component Browser:
+    ./app/globals.css [Client Component Browser]
+    ./app/layout.tsx [Server Component]

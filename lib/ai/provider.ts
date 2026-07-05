@@ -3,13 +3,15 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { env } from "@/lib/env";
-import type { GenerationStatus, Species } from "@/lib/types";
+import { darkenHex, hexToRgb, lightenHex, lightnessOf } from "@/lib/rendering/palette-utils";
+import type { GenerationStatus, PetPhotoPalette, Species } from "@/lib/types";
 
 export interface ImageGenerationProvider {
   createJob(input: {
     imagePath: string;
     species: Species;
     promptSeed: string;
+    palette?: PetPhotoPalette;
   }): Promise<{
     providerJobId: string;
     worldSpritePath?: string;
@@ -24,7 +26,72 @@ export interface ImageGenerationProvider {
   }>;
 }
 
-function buildCatSpriteSvg(fill: { fur: string; stripe: string; inner: string; nose: string }, seed: string) {
+export interface CatSpriteFill {
+  fur: string;
+  stripe: string;
+  inner: string;
+  nose: string;
+}
+
+export interface DogSpriteFill {
+  fur: string;
+  patch: string;
+  ear: string;
+  collar: string;
+}
+
+const DEFAULT_CAT_FILL: CatSpriteFill = {
+  fur: "#F7F4E8",
+  stripe: "#F59E0B",
+  inner: "#FFE4E6",
+  nose: "#F472B6",
+};
+
+const DEFAULT_DOG_FILL: DogSpriteFill = {
+  fur: "#D97706",
+  patch: "#FFF7ED",
+  ear: "#78350F",
+  collar: "#2563EB",
+};
+
+function isValidHex(value: string | undefined): value is string {
+  return Boolean(value && hexToRgb(value));
+}
+
+/**
+ * Maps the photo palette onto the sprite template so the cypher pet wears the
+ * real pet's colors. Falls back to the classic garden palette without a photo.
+ */
+export function resolveSpritePalette(
+  species: Species,
+  palette?: PetPhotoPalette,
+): { cat: CatSpriteFill; dog: DogSpriteFill; paletteName: string } {
+  if (!palette || !isValidHex(palette.fur)) {
+    return {
+      cat: DEFAULT_CAT_FILL,
+      dog: DEFAULT_DOG_FILL,
+      paletteName: species === "cat" ? "garden-cat" : "garden-dog",
+    };
+  }
+
+  const fur = palette.fur;
+  const furRgb = hexToRgb(fur)!;
+  const stripe = isValidHex(palette.stripe) && palette.stripe !== fur
+    ? palette.stripe
+    : darkenHex(fur, 0.3);
+  const inner = isValidHex(palette.inner) ? palette.inner : lightenHex(fur, 0.55);
+  const nose = isValidHex(palette.accent) ? palette.accent : "#F472B6";
+  // Ears need contrast against the fur to stay readable at sprite scale.
+  const ear = lightnessOf(furRgb) > 0.35 ? darkenHex(fur, 0.42) : lightenHex(fur, 0.25);
+
+  return {
+    cat: { fur, stripe, inner, nose },
+    dog: { fur, patch: inner, ear, collar: DEFAULT_DOG_FILL.collar },
+    paletteName: "photo-matched",
+  };
+}
+
+export function buildCatSpriteSvg(fill: CatSpriteFill, seed: string) {
   return `
 <svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
   <ellipse cx="40" cy="78" rx="28" ry="8" fill="#0B1220" fill-opacity=".18"/>
@@ -72,7 +139,7 @@ function buildCatSpriteSvg(fill: { fur: string; stripe: string; inner: string; n
 </svg>`.trim();
 }
 
-function buildDogSpriteSvg(fill: { fur: string; patch: string; ear: string; collar: string }, seed: string) {
+export function buildDogSpriteSvg(fill: DogSpriteFill, seed: string) {
   return `
 <svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
   <ellipse cx="42" cy="78" rx="30" ry="8" fill="#0B1220" fill-opacity=".16"/>
@@ -116,40 +183,26 @@ class MockImageGenerationProvider implements ImageGenerationProvider {
     imagePath: string;
     species: Species;
     promptSeed: string;
+    palette?: PetPhotoPalette;
   }) {
     const filename = `generated-${randomUUID()}.svg`;
     const outputPath = path.join(process.cwd(), "public", "generated", filename);
     const appearanceSeed = input.promptSeed.split("-").slice(-1)[0] ?? randomUUID().slice(0, 6);
-    const paletteName = input.species === "cat" ? "garden-cat" : "garden-dog";
+    const resolved = resolveSpritePalette(input.species, input.palette);
     const svg =
       input.species === "cat"
-        ? buildCatSpriteSvg(
-            {
-              fur: "#F7F4E8",
-              stripe: "#F59E0B",
-              inner: "#FFE4E6",
-              nose: "#F472B6",
-            },
-            appearanceSeed,
-          )
-        : buildDogSpriteSvg(
-            {
-              fur: "#D97706",
-              patch: "#FFF7ED",
-              ear: "#78350F",
-              collar: "#2563EB",
-            },
-            appearanceSeed,
-          );
+        ? buildCatSpriteSvg(resolved.cat, appearanceSeed)
+        : buildDogSpriteSvg(resolved.dog, appearanceSeed);
 
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, svg, "utf8");
 
     return {
       providerJobId: `mock-${randomUUID()}`,
-      worldSpritePath: `/generated/${filename}`,
+      // Served via a route so sprites written after `next build` still load.
+      worldSpritePath: `/api/sprites/${filename}`,
       appearanceSeed,
-      paletteName,
+      paletteName: resolved.paletteName,
     };
   }
 

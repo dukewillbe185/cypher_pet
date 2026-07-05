@@ -241,6 +241,14 @@ export interface PetPersonality {
   napBias: number;
 }
 
+/** Dominant colors sampled from the uploaded pet photo. */
+export interface PetPhotoPalette {
+  fur: string;
+  stripe: string;
+  inner: string;
+  accent: string;
+}
+
 export interface SourcePhoto {
   id: string;
   petId: string;
@@ -249,6 +257,7 @@ export interface SourcePhoto {
   sizeBytes: number;
   originalFilename: string;
   createdAt: string;
+  palette?: PetPhotoPalette;
 }
 
 export interface PetGeneration {

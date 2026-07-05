@@ -26,7 +26,13 @@ import {
 } from "@/lib/domain/chat-world-command";
 import { buildPetEpisodicMemoryIndex, buildSemanticMemoryDigest } from "@/lib/ai/memory-compressor";
 import { recordEncounterIntervention, recordEncounterWorldAction } from "@/lib/domain/garden-encounters";
-import { buildGardenSnapshot, advanceStoreToNow, applyOwnerActionToStore, deriveMood } from "@/lib/domain/simulation";
+import {
+  buildGardenSnapshot,
+  advanceStoreToNow,
+  applyOwnerActionToStore,
+  cleanPoopObjectInStore,
+  deriveMood,
+} from "@/lib/domain/simulation";
 import {
   applyGrowthAward,
   DAILY_REUNION_BOND,
@@ -65,6 +71,7 @@ import type {
   PetActivity,
   PetDetailsView,
   PetGeneration,
+  PetPhotoPalette,
   PetGoalType,
   PetState,
   Profile,
@@ -957,6 +964,7 @@ export async function createSourcePhoto(input: {
   mimeType: string;
   sizeBytes: number;
   originalFilename: string;
+  palette?: PetPhotoPalette;
 }) {
   return mutateStore((store) => {
     const photo = {
@@ -967,6 +975,7 @@ export async function createSourcePhoto(input: {
       sizeBytes: input.sizeBytes,
       originalFilename: input.originalFilename,
       createdAt: new Date().toISOString(),
+      palette: input.palette,
     };
 
     store.sourcePhotos.unshift(photo);
@@ -1257,6 +1266,18 @@ export async function applyOwnerAction(input: {
     }
 
     return result;
+  });
+}
+
+export async function cleanGardenPoop(input: { viewerId: string; objectId: string }) {
+  return mutateStore(async (store) => {
+    const viewer = store.profiles.find((profile) => profile.id === input.viewerId);
+
+    if (!viewer) {
+      throw new Error("not-found");
+    }
+
+    return cleanPoopObjectInStore(store, { viewer, objectId: input.objectId });
   });
 }
 

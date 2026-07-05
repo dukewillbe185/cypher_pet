@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { FieldLabel, SelectInput, TextAreaInput, TextInput } from "@/components/ui/field";
 import { readJsonResponse } from "@/lib/api-client";
 import { markPerformance, measurePerformance } from "@/lib/client/perf";
+import { extractPetPalette } from "@/lib/client/photo-palette";
 import type { OwnerAction, Profile, ReportTargetType } from "@/lib/types";
 
 type CreatePetStage =
@@ -160,6 +161,12 @@ export function CreatePetForm() {
       setStage("uploading-photo");
       const uploadPayload = new FormData();
       uploadPayload.append("photo", photo);
+
+      // Sample the photo's dominant colors so the sprite matches the real pet.
+      const palette = await extractPetPalette(photo);
+      if (palette) {
+        uploadPayload.append("palette", JSON.stringify(palette));
+      }
 
       const uploadResponse = await fetch(`/api/pets/${petPayload.pet.id}/source-photo`, {
         method: "POST",
@@ -379,6 +386,81 @@ export function SignInForm() {
       <Button className="w-full" disabled={pending || isNavigating} type="submit">
         {pending ? "链接生成中..." : isNavigating ? "正在进入花园..." : "进入 Cypher Garden"}
       </Button>
+    </form>
+  );
+}
+
+export function RegeneratePetSpriteForm({ petId }: { petId: string }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const { message, error, setMessage, resetStatus, handleFailure } = useApiForm();
+
+  async function onSubmit(formData: FormData) {
+    if (pending) {
+      return;
+    }
+
+    try {
+      resetStatus();
+      setPending(true);
+
+      const photo = formData.get("photo");
+
+      if (!(photo instanceof File) || photo.size === 0) {
+        throw new Error("请选择一张新的宠物照片。");
+      }
+
+      const uploadPayload = new FormData();
+      uploadPayload.append("photo", photo);
+
+      const palette = await extractPetPalette(photo);
+      if (palette) {
+        uploadPayload.append("palette", JSON.stringify(palette));
+      }
+
+      const uploadResponse = await fetch(`/api/pets/${petId}/source-photo`, {
+        method: "POST",
+        body: uploadPayload,
+      });
+      const uploadJson = await readJsonResponse<{
+        sourcePhoto: { id: string };
+      }>(uploadResponse, "上传照片失败。");
+
+      const generationResponse = await fetch(`/api/pets/${petId}/generations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourcePhotoId: uploadJson.sourcePhoto.id }),
+      });
+      await readJsonResponse(generationResponse, "重新生成失败。");
+
+      setMessage("新形象已生成，正在刷新。");
+      router.refresh();
+    } catch (submissionError) {
+      handleFailure(submissionError);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form action={onSubmit} className="space-y-3">
+      <FieldLabel
+        hint="重新上传照片后会按照片的真实配色重新生成像素形象。"
+        htmlFor="regenerate-photo"
+        label="按照片配色重新生成"
+      />
+      <TextInput
+        accept="image/png,image/jpeg,image/webp"
+        id="regenerate-photo"
+        name="photo"
+        required
+        type="file"
+      />
+      <Button disabled={pending} type="submit" variant="secondary">
+        {pending ? "生成中..." : "重新生成像素形象"}
+      </Button>
+      {message ? <p className="text-sm text-lime-200">{message}</p> : null}
+      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
     </form>
   );
 }
