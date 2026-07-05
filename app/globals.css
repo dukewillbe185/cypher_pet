@@ -1,0 +1,188 @@
+@import "tailwindcss";
+
+:root {
+  --background: #04070d;
+  --foreground: #f5fbff;
+  --muted: rgba(231, 242, 255, 0.62);
+  --card: rgba(8, 11, 18, 0.88);
+  --border: rgba(255, 255, 255, 0.1);
+  --lime: #befe5f;
+  --cyan: #62efff;
+  --magenta: #ff68df;
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-slow: 220ms;
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background-color: var(--background);
+  color-scheme: dark;
+  overscroll-behavior-y: none;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+body {
+  margin: 0;
+  overscroll-behavior-y: none;
+  min-height: 100vh;
+  background-color: var(--background);
+  background:
+    linear-gradient(180deg, rgba(190, 254, 95, 0.04), transparent 18%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    var(--background);
+  background-size: auto, 42px 42px, 42px 42px, auto;
+  color: var(--foreground);
+  font-family: var(--font-body), sans-serif;
+}
+
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.03) 50%,
+    transparent 100%
+  );
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(98, 239, 255, 0.24);
+  color: white;
+}
+
+.font-display {
+  font-family: var(--font-display), sans-serif;
+}
+
+.garden-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) rgba(255, 255, 255, 0.06);
+}
+
+.garden-scroll::-webkit-scrollbar {
+  height: 12px;
+}
+
+.garden-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.garden-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.garden-pixel-stage canvas,
+.garden-pixel-stage img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.ui-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ui-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.12) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: ui-skeleton-shimmer 1.3s var(--ease-smooth) infinite;
+}
+
+.smooth-fade {
+  transition:
+    opacity var(--motion-base) var(--ease-smooth),
+    transform var(--motion-base) var(--ease-smooth);
+}
+
+.motion-fast {
+  transition-duration: var(--motion-fast);
+}
+
+.motion-base {
+  transition-duration: var(--motion-base);
+}
+
+.ease-smooth {
+  transition-timing-function: var(--ease-smooth);
+}
+
+.app-backdrop {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.14), transparent 30%),
+    radial-gradient(circle at 100% 10%, rgba(163, 230, 53, 0.14), transparent 34%),
+    radial-gradient(circle at 50% 100%, rgba(217, 70, 239, 0.1), transparent 36%);
+}
+
+.hero-surface {
+  background:
+    radial-gradient(circle at top left, rgba(98, 239, 255, 0.18), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(190, 254, 95, 0.15), transparent 42%),
+    linear-gradient(140deg, rgba(6, 9, 16, 0.96), rgba(8, 14, 21, 0.98));
+}
+
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.home-radar-glow {
+  background:
+    radial-gradient(circle at top left, rgba(98, 239, 255, 0.1), transparent 38%),
+    radial-gradient(circle at bottom right, rgba(190, 254, 95, 0.12), transparent 40%);
+}
+
+.chat-drawer-panel {
+  background: linear-gradient(180deg, rgba(6, 11, 18, 0.98), rgba(8, 16, 24, 0.98));
+}
+
+.card-surface {
+  background: linear-gradient(180deg, rgba(13, 20, 33, 0.92), rgba(8, 11, 18, 0.96));
+}
+
+@keyframes ui-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

@@ -1,0 +1,13 @@
+<svg width="960" height="1200" viewBox="0 0 960 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="1200" rx="64" fill="#060A12"/>
+  <circle cx="760" cy="180" r="180" fill="#62EFFF" fill-opacity="0.16"/>
+  <circle cx="180" cy="980" r="200" fill="#BEFE5F" fill-opacity="0.14"/>
+  <path d="M240 310L350 160L450 360L240 310Z" fill="#BEFE5F" fill-opacity="0.88"/>
+  <path d="M720 310L610 160L510 360L720 310Z" fill="#62EFFF" fill-opacity="0.88"/>
+  <rect x="240" y="340" width="480" height="480" rx="220" fill="#111A2C"/>
+  <circle cx="395" cy="520" r="52" fill="#BEFE5F"/>
+  <circle cx="565" cy="520" r="52" fill="#62EFFF"/>
+  <path d="M480 580C430 580 380 625 380 690C380 750 430 805 480 805C530 805 580 750 580 690C580 625 530 580 480 580Z" fill="#0A1220"/>
+  <path d="M380 884C430 920 535 924 586 884" stroke="#FF68DF" stroke-width="18" stroke-linecap="round"/>
+  <text x="72" y="1090" fill="#F8FBFF" font-size="64" font-family="Arial, sans-serif">NYX // MIDNIGHT CAT</text>
+</svg>

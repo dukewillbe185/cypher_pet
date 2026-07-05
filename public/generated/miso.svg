@@ -1,0 +1,13 @@
+<svg width="960" height="1200" viewBox="0 0 960 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="1200" rx="64" fill="#08101B"/>
+  <circle cx="760" cy="180" r="190" fill="#FF68DF" fill-opacity="0.16"/>
+  <circle cx="200" cy="960" r="220" fill="#62EFFF" fill-opacity="0.12"/>
+  <path d="M250 310C250 210 330 140 430 140L390 350L250 310Z" fill="#BEFE5F"/>
+  <path d="M710 310C710 210 630 140 530 140L570 350L710 310Z" fill="#BEFE5F"/>
+  <rect x="240" y="340" width="480" height="480" rx="230" fill="#122033"/>
+  <circle cx="390" cy="550" r="46" fill="#62EFFF"/>
+  <circle cx="570" cy="550" r="46" fill="#62EFFF"/>
+  <path d="M480 620C430 620 390 670 390 725C390 780 430 830 480 830C530 830 570 780 570 725C570 670 530 620 480 620Z" fill="#0C1627"/>
+  <path d="M372 896C436 930 524 930 588 896" stroke="#BEFE5F" stroke-width="18" stroke-linecap="round"/>
+  <text x="72" y="1090" fill="#F8FBFF" font-size="64" font-family="Arial, sans-serif">MISO // RAIN SHIBA</text>
+</svg>

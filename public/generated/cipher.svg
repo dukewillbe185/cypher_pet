@@ -1,0 +1,13 @@
+<svg width="960" height="1200" viewBox="0 0 960 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="1200" rx="64" fill="#050A12"/>
+  <circle cx="200" cy="170" r="170" fill="#62EFFF" fill-opacity="0.14"/>
+  <circle cx="760" cy="1000" r="210" fill="#BEFE5F" fill-opacity="0.14"/>
+  <path d="M220 350L330 130L450 400L220 350Z" fill="#62EFFF"/>
+  <path d="M740 350L630 130L510 400L740 350Z" fill="#62EFFF"/>
+  <rect x="220" y="360" width="520" height="500" rx="250" fill="#101C2D"/>
+  <circle cx="390" cy="560" r="50" fill="#BEFE5F"/>
+  <circle cx="570" cy="560" r="50" fill="#BEFE5F"/>
+  <rect x="410" y="640" width="140" height="150" rx="50" fill="#09111E"/>
+  <path d="M360 906C425 952 534 952 600 906" stroke="#62EFFF" stroke-width="18" stroke-linecap="round"/>
+  <text x="72" y="1090" fill="#F8FBFF" font-size="64" font-family="Arial, sans-serif">CIPHER // RADAR DOG</text>
+</svg>
