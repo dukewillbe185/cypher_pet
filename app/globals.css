@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source not "../.next-verify";
 
 :root {
   --background: #04070d;
@@ -100,6 +101,14 @@ a {
 .garden-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.22);
+}
+
+.garden-summary-toggle {
+  list-style: none;
+}
+
+.garden-summary-toggle::-webkit-details-marker {
+  display: none;
 }
 
 .garden-pixel-stage canvas,

@@ -390,7 +390,7 @@ export function GardenExperience({
       </div>
 
       <details className="group rounded-[24px] border border-white/10 bg-white/[0.03]">
-        <summary className="flex cursor-pointer select-none items-center gap-3 rounded-[24px] px-5 py-4 text-sm font-semibold text-white/70 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+        <summary className="garden-summary-toggle flex cursor-pointer select-none items-center gap-3 rounded-[24px] px-5 py-4 text-sm font-semibold text-white/70 transition-colors hover:text-white">
           <Radar aria-hidden="true" className="h-4 w-4 text-cyan-200" />
           世界监控台 · World Console
           <span className="ml-auto text-xs font-normal uppercase tracking-[0.2em] text-white/35 group-open:hidden">
