@@ -50,10 +50,32 @@ export async function generateInnerVoice(
   context: PersonaContext,
   trigger: InnerVoiceTrigger,
   mode: LLMExecutionMode = "blocking",
-): Promise<{ text: string; kind: SpeechBubbleKind }> {
-  const cacheKey = `inner-voice:${pet.id}:${state.activity}:${state.mood}:${trigger}:${context.worldState.phase}`;
-  const systemPrompt = `${buildPetVoicePrompt(pet, state, context)}\n\n请输出一句 6 到 12 个汉字以内的内心独白，不要加引号，不要加解释。`;
-  const userPrompt = `触发原因：${trigger}。请给出 ${pet.name} 此刻最像它自己的想法。`;
+  options?: {
+    /** Hot simulation paths keep the 900ms guard; background jobs can wait. */
+    timeoutMs?: number;
+    /** Extra cache-key salt so ambient lines vary across visits. */
+    cacheSalt?: string;
+    /** A concrete in-world moment to react to (e.g. "你刚跟 Nyx 起了冲突"). */
+    situation?: string;
+    /** Recent lines the pet said; the model is told not to repeat them. */
+    avoidLines?: string[];
+  },
+): Promise<{ text: string; kind: SpeechBubbleKind; source: "llm" | "fallback" }> {
+  const situationKey = options?.situation ? `:${options.situation}` : "";
+  const cacheKey = `inner-voice:${pet.id}:${state.activity}:${state.mood}:${trigger}${situationKey}:${context.worldState.phase}${
+    options?.cacheSalt ? `:${options.cacheSalt}` : ""
+  }`;
+  const avoidDirective =
+    options?.avoidLines && options.avoidLines.length > 0
+      ? `\n最近你已经说过这些，别重复、也别换个说法重说：${options.avoidLines
+          .slice(0, 6)
+          .map((line) => `「${line}」`)
+          .join("、")}`
+      : "";
+  const systemPrompt = `${buildPetVoicePrompt(pet, state, context)}\n\n请输出一句 6 到 14 个汉字以内的内心独白，不要加引号，不要加解释。${avoidDirective}`;
+  const userPrompt = options?.situation
+    ? `此刻的处境：${options.situation}\n请说出 ${pet.name} 此刻脱口而出、最像它自己的一句话。`
+    : `触发原因：${trigger}。请给出 ${pet.name} 此刻最像它自己的想法。`;
   const fallbackText = fallbackInnerVoice(pet, state, trigger);
 
   try {
@@ -72,19 +94,23 @@ export async function generateInnerVoice(
           messages: [{ role: "user", content: userPrompt }],
           maxTokens: 60,
           temperature: 0.8,
-          timeoutMs: 900,
+          timeoutMs: options?.timeoutMs ?? 900,
           })
         ).content,
     });
 
+    const trimmed = trimBubbleText(reply);
+
     return {
-      text: trimBubbleText(reply) || trimBubbleText(fallbackText),
+      text: trimmed || trimBubbleText(fallbackText),
       kind: trigger === "social_encounter" ? "speech" : "thought",
+      source: trimmed && trimmed !== trimBubbleText(fallbackText) ? "llm" : "fallback",
     };
   } catch {
     return {
       text: trimBubbleText(fallbackText),
       kind: trigger === "social_encounter" ? "speech" : "thought",
+      source: "fallback",
     };
   }
 }

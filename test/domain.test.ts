@@ -190,6 +190,15 @@ function buildMinimalStore(): AppStore {
     chatSessions: [],
     notifications: [],
     reports: [],
+    petSemanticMemoryDigests: [],
+    gardenLedgerEvents: [],
+    gardenSemanticFacts: [],
+    gardenEncounterThreads: [],
+    petGoals: [],
+    pairRelationshipModels: [],
+    conversationSummaries: [],
+    petChatTraces: [],
+    gardenPresences: [],
   };
 }
 

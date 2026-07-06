@@ -1,4 +1,69 @@
-import type { NotificationKind, OwnerAction, PetEventType, PetMood } from "@/lib/types";
+import type { AppStore, NotificationKind, OwnerAction, PetEventType, PetMood } from "@/lib/types";
+
+const OVERNIGHT_WINDOW_MS = 1000 * 60 * 60 * 16;
+const RECAP_EVENT_PRIORITY: PetEventType[] = [
+  "bonded",
+  "scuffle",
+  "chased",
+  "social_chat",
+  "zone_move",
+  "climbed_tree",
+  "dug",
+  "watched_fish",
+  "mood_change",
+];
+
+/**
+ * What happened while the owner was away — feeds the daily reunion message
+ * so there is something real waiting every day.
+ */
+export function buildOvernightRecapLines(
+  store: AppStore,
+  ownerId: string,
+  nowMs: number,
+  maxLines = 3,
+) {
+  const ownedPetIds = new Set(
+    store.pets.filter((pet) => pet.ownerId === ownerId).map((pet) => pet.id),
+  );
+
+  if (ownedPetIds.size === 0) {
+    return [];
+  }
+
+  const candidates = store.petEvents.filter((event) => {
+    if (!ownedPetIds.has(event.petId) || event.hidden) {
+      return false;
+    }
+
+    if (event.type === "owner_action" || event.type === "inner_voice") {
+      return false;
+    }
+
+    const createdMs = new Date(event.createdAt).getTime();
+    return Number.isFinite(createdMs) && nowMs - createdMs < OVERNIGHT_WINDOW_MS;
+  });
+
+  const lines: string[] = [];
+  const usedPetIds = new Set<string>();
+
+  for (const type of RECAP_EVENT_PRIORITY) {
+    for (const event of candidates) {
+      if (lines.length >= maxLines) {
+        return lines;
+      }
+
+      if (event.type !== type || usedPetIds.has(event.petId)) {
+        continue;
+      }
+
+      usedPetIds.add(event.petId);
+      lines.push(event.body.replace(/\s+/g, " ").trim());
+    }
+  }
+
+  return lines;
+}
 
 export function buildMoodNotification(petName: string, mood: PetMood) {
   switch (mood) {

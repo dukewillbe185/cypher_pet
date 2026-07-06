@@ -30,6 +30,7 @@ import {
   notificationKindFromMood,
 } from "@/lib/domain/notifications";
 import { getPetPersonality } from "@/lib/domain/personality";
+import { canPetEnterZone, canViewerAccessZone } from "@/lib/domain/zone-access";
 import {
   ageSocialGraph,
   buildPetBonds,
@@ -53,6 +54,7 @@ import type {
   Facing,
   GardenPetSnapshot,
   GardenSnapshot,
+  GardenZone,
   GardenZoneId,
   OwnerAction,
   Pet,
@@ -71,6 +73,8 @@ const HOURS_TO_MS = 1000 * 60 * 60;
 const ACTION_WINDOW_MS = 1000 * 20;
 const FUTURE_TOLERANCE_MS = 1000 * 60;
 const BUBBLE_DURATION_MS = 1000 * 5;
+/** How long a charged moment (e.g. a spat) pins a pet's mood before it can drift. */
+const MOOD_LOCK_MS = 1000 * 60 * 3;
 const MAX_NARRATED_EVENTS_PER_ADVANCE = 3;
 
 export interface AdvanceStoreOptions {
@@ -321,8 +325,10 @@ export function deriveMood(state: PetState): PetMood {
 }
 
 function moveToObject(state: PetState, object: WorldObject) {
-  state.tileX = object.tileX;
-  state.tileY = object.tileY;
+  // Each pet settles on its own side of the target so groups don't stack
+  // pixel-perfectly on one tile.
+  state.tileX = clampTileX(object.tileX + (simpleHash(`${state.petId}-settle-x`) % 3) - 1);
+  state.tileY = clampTileY(object.tileY + (simpleHash(`${state.petId}-settle-y`) % 3) - 1);
 }
 
 function moveToRandomTile(state: PetState, seed: string) {
@@ -530,6 +536,8 @@ function moveToOwnerPresence(state: PetState, presence: { tileX: number; tileY: 
 }
 
 function activeCrossZoneGoal(store: AppStore, petId: string, currentZoneId: GardenZoneId) {
+  const pet = store.pets.find((entry) => entry.id === petId);
+
   return (store.petGoals ?? [])
     .filter(
       (goal) =>
@@ -537,6 +545,11 @@ function activeCrossZoneGoal(store: AppStore, petId: string, currentZoneId: Gard
         goal.status === "active" &&
         goal.targetZoneId &&
         goal.targetZoneId !== currentZoneId &&
+        // Private areas only admit their owner's pets.
+        Boolean(pet && canPetEnterZone(store, pet, goal.targetZoneId)) &&
+        // Settled pets only cross zones to go home; old wanderlust goals
+        // must not pull them back out of the area they live in.
+        (!pet?.homeZoneId || goal.targetZoneId === pet.homeZoneId) &&
         (goal.goalType === "explore_zone" ||
           goal.goalType === "move_to_zone" ||
           goal.goalType === "guard_favorite_spot" ||
@@ -549,8 +562,13 @@ function canRoamAcrossZones(state: PetState, restThreshold: number) {
   return state.energy > restThreshold + 6 && state.hunger < 58 && state.bladder < 70 && state.stress < 74;
 }
 
-function moveToZoneEntryTile(state: PetState, targetZoneId: GardenZoneId, seed: string) {
-  const terrain = buildTerrainMap(targetZoneId);
+function moveToZoneEntryTile(
+  state: PetState,
+  targetZoneId: GardenZoneId,
+  seed: string,
+  targetZone?: GardenZone,
+) {
+  const terrain = buildTerrainMap(targetZoneId, targetZone);
   const entryStructure =
     terrain.structures.find((structure) => structure.kind === "bridge") ??
     terrain.structures.find((structure) => structure.kind === "lamp") ??
@@ -595,7 +613,10 @@ function chooseActivity(
   const bushes = activeZoneObjects(store, state.zoneId, "bush");
   const pondEdges = activeZoneObjects(store, state.zoneId, "pond_edge");
   const toys = activeZoneObjects(store, state.zoneId, "toy");
-  const terrain = buildTerrainMap(state.zoneId);
+  const terrain = buildTerrainMap(
+    state.zoneId,
+    store.gardenZones.find((zone) => zone.id === state.zoneId),
+  );
   const feeders = terrain.structures.filter((structure) => structure.kind === "feeding_station");
   const waterSpots = terrain.structures.filter(
     (structure) => structure.kind === "water_bowl" || structure.kind === "bridge",
@@ -656,7 +677,8 @@ function chooseActivity(
       : Math.max(24, 58 - Math.floor(personality.napBias / 2));
 
   if (state.energy <= restThreshold) {
-    const napSpot = restSpots[0];
+    // Every pet has "its" spot: stable per pet, so beds don't get dogpiled.
+    const napSpot = restSpots.length > 0 ? sample(restSpots, pet.id) : undefined;
     if (napSpot) {
       moveToObject(state, napSpot);
     }
@@ -666,7 +688,12 @@ function chooseActivity(
 
   const roamGoal = activeCrossZoneGoal(store, pet.id, state.zoneId);
   if (roamGoal?.targetZoneId && canRoamAcrossZones(state, restThreshold)) {
-    moveToZoneEntryTile(state, roamGoal.targetZoneId, `${timeSeed}-zone-roam`);
+    moveToZoneEntryTile(
+      state,
+      roamGoal.targetZoneId,
+      `${timeSeed}-zone-roam`,
+      store.gardenZones.find((zone) => zone.id === roamGoal.targetZoneId),
+    );
     return;
   }
 
@@ -724,8 +751,8 @@ function chooseActivity(
 
   if (state.hunger >= Math.max(42, 58 - favoriteFoodBias) && feeders.length > 0) {
     const feeder = sample(feeders, `${timeSeed}-feeder`);
-    state.tileX = clampTileX(feeder.x);
-    state.tileY = clampTileY(feeder.y);
+    state.tileX = clampTileX(feeder.x + (simpleHash(`${pet.id}-feed-x`) % 3) - 1);
+    state.tileY = clampTileY(feeder.y + (simpleHash(`${pet.id}-feed-y`) % 3) - 1);
     state.activity = "eat";
     return;
   }
@@ -925,7 +952,10 @@ function buildActivityCandidates(
   const personality = getPetPersonality(pet);
   const world = createWorldState(now);
   const timeSeed = `${pet.id}-${Math.floor(now.getTime() / ACTION_WINDOW_MS)}`;
-  const terrain = buildTerrainMap(state.zoneId);
+  const terrain = buildTerrainMap(
+    state.zoneId,
+    store.gardenZones.find((zone) => zone.id === state.zoneId),
+  );
   const feeders = terrain.structures.filter((structure) => structure.kind === "feeding_station");
   const restSpots = [
     ...activeZoneObjects(store, state.zoneId, "pet_bed"),
@@ -954,7 +984,12 @@ function buildActivityCandidates(
   const roamGoal = activeCrossZoneGoal(store, pet.id, state.zoneId);
   if (roamGoal?.targetZoneId && canRoamAcrossZones(state, restThreshold)) {
     const roamState = cloneStateForPlanning(state);
-    moveToZoneEntryTile(roamState, roamGoal.targetZoneId, `${timeSeed}-candidate-zone-roam`);
+    moveToZoneEntryTile(
+      roamState,
+      roamGoal.targetZoneId,
+      `${timeSeed}-candidate-zone-roam`,
+      store.gardenZones.find((zone) => zone.id === roamGoal.targetZoneId),
+    );
     pushActionCandidate(
       candidates,
       activityCandidate(roamState, {
@@ -1729,6 +1764,9 @@ async function resolveActivityEffects(
         }),
         nearbyPet ?? undefined,
       );
+      // A spat pins a grumpy mood so it visibly lingers instead of snapping back.
+      state.mood = "grumpy";
+      state.moodLockedUntil = new Date(new Date(nowIso).getTime() + MOOD_LOCK_MS).toISOString();
     }
   }
 
@@ -1829,8 +1867,18 @@ async function resolveActivityEffects(
     }
   }
 
-  const nextMood = deriveMood(state);
+  const derivedMood = deriveMood(state);
+  // A pinned mood (e.g. after a spat) lingers until its lock expires instead of
+  // snapping straight back to whatever the current stats would derive.
+  const moodLocked =
+    Boolean(state.moodLockedUntil) && new Date(state.moodLockedUntil!).getTime() > now.getTime();
+  const nextMood = moodLocked ? state.mood : derivedMood;
   state.mood = nextMood;
+
+  if (!moodLocked && state.moodLockedUntil) {
+    // Lock elapsed — clear it so the mood can move freely again.
+    state.moodLockedUntil = undefined;
+  }
 
   if (nextMood !== previousMood) {
     await emitEvent(
@@ -2120,6 +2168,12 @@ export function cleanPoopObjectInStore(
 
   if (!object || object.type !== "poop" || object.removedAt) {
     throw new Error("poop-not-found");
+  }
+
+  const objectZone = store.gardenZones.find((zone) => zone.id === object.zoneId);
+
+  if (!canViewerAccessZone(objectZone, input.viewer.id)) {
+    throw new Error("这个区域是私密的。");
   }
 
   object.removedAt = new Date().toISOString();

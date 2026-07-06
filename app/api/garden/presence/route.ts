@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 import { getViewerContext } from "@/lib/auth";
-import { recordGardenPresence } from "@/lib/repository";
+import { generatePetSpeech, recordGardenPresence } from "@/lib/repository";
 import { jsonError, jsonOk } from "@/lib/utils";
 
 const bodySchema = z.object({
-  zoneId: z.enum(["orchard", "pond", "grove", "dog-run"]),
+  zoneId: z.string().min(1).max(64),
   tileX: z.number().int().min(0).max(64),
   tileY: z.number().int().min(0).max(64),
 });
@@ -25,6 +25,9 @@ export async function POST(request: Request) {
       tileX: payload.tileX,
       tileY: payload.tileY,
     });
+
+    // Speech happens off the request path; the next snapshot poll picks it up.
+    void generatePetSpeech({ zoneId: payload.zoneId, viewerId: profile.id });
 
     return jsonOk(result);
   } catch (error) {

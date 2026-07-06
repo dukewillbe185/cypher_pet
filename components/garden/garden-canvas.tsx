@@ -23,6 +23,7 @@ import {
   findNearestWalkableTile,
   findWalkingPath,
   isWalkableTile,
+  registerZoneTerrain,
   type TilePoint,
 } from "@/lib/domain/pathfinding";
 import { WORLD_COLS, WORLD_ROWS, WORLD_TILE_SIZE } from "@/lib/domain/world";
@@ -65,18 +66,18 @@ const FAR_CALL_TILES = 6;
 const HOLD_TO_MOVE_MS = 220;
 const HOLD_TO_MOVE_DRIFT_PX = 12;
 
-const ZONE_TRAVEL_RING: GardenZoneId[] = ["orchard", "pond", "grove", "dog-run"];
+const DEFAULT_TRAVEL_RING: GardenZoneId[] = ["orchard", "pond", "grove", "dog-run"];
 const GATE_BAND_MIN_TILE_Y = 20;
 const GATE_BAND_MAX_TILE_Y = 28;
 
-const backgroundScenePath: Record<GardenZoneId, string> = {
+const backgroundScenePath: Record<string, string> = {
   orchard: "/garden/scene-orchard.svg",
   pond: "/garden/scene-pond.svg",
   grove: "/garden/scene-grove.svg",
   "dog-run": "/garden/scene-dog-run.svg",
 };
 
-const zoneAtmosphere: Record<GardenZoneId, string> = {
+const zoneAtmosphere: Record<string, string> = {
   orchard:
     "radial-gradient(circle at 15% 16%, rgba(255,243,172,0.28), transparent 22%), radial-gradient(circle at 78% 34%, rgba(112,255,218,0.16), transparent 26%)",
   pond:
@@ -87,12 +88,31 @@ const zoneAtmosphere: Record<GardenZoneId, string> = {
     "radial-gradient(circle at 28% 18%, rgba(255,217,113,0.18), transparent 28%), radial-gradient(circle at 82% 38%, rgba(116,255,194,0.12), transparent 26%)",
 };
 
-const zoneSpawnTile: Record<GardenZoneId, TilePoint> = {
+// Player-built areas reuse the grove backdrop with a violet-cyan glow.
+const CUSTOM_ZONE_SCENE = "/garden/scene-grove.svg";
+const CUSTOM_ZONE_ATMOSPHERE =
+  "radial-gradient(circle at 30% 18%, rgba(167,139,250,0.2), transparent 26%), radial-gradient(circle at 76% 40%, rgba(98,239,255,0.14), transparent 28%)";
+
+const zoneSpawnTile: Record<string, TilePoint> = {
   orchard: { tileX: 24, tileY: 30 },
   pond: { tileX: 24, tileY: 34 },
   grove: { tileX: 24, tileY: 31 },
   "dog-run": { tileX: 24, tileY: 32 },
 };
+
+const CUSTOM_ZONE_SPAWN: TilePoint = { tileX: 24, tileY: 33 };
+
+function zoneScenePath(zoneId: GardenZoneId) {
+  return backgroundScenePath[zoneId] ?? CUSTOM_ZONE_SCENE;
+}
+
+function zoneAtmosphereFor(zoneId: GardenZoneId) {
+  return zoneAtmosphere[zoneId] ?? CUSTOM_ZONE_ATMOSPHERE;
+}
+
+function zoneSpawnFor(zoneId: GardenZoneId): TilePoint {
+  return zoneSpawnTile[zoneId] ?? CUSTOM_ZONE_SPAWN;
+}
 
 const environmentLayerOrder = {
   sky: 0,
@@ -195,12 +215,18 @@ function movementTier(activity: PetActivity): MovementTier {
     case "dig":
     case "scuffle":
     case "approach_pet":
+    case "offer_toy":
+    case "steal_spot":
       return "trot";
     case "wander":
     case "move_to_zone":
     case "seek_owner":
+    case "escort_owner":
     case "look_around":
     case "climb_tree":
+    case "reconcile":
+    case "observe_from_distance":
+    case "claim_spot":
       return "amble";
     default:
       return "rest";
@@ -219,6 +245,31 @@ function tierTilesPerSecond(tier: MovementTier, zoomies: number) {
       return 1.7 + zoomBias * 0.3;
     default:
       return 1.5;
+  }
+}
+
+/**
+ * A small idle "tell" so a pet's personality reads even when it's standing
+ * still and saying nothing — chaos pets pop with restless hops, a tree poet
+ * reaches slowly upward, a pond dreamer drifts side to side, etc.
+ */
+const ZERO_IDLE_MOTION = { dx: 0, dy: 0 } as const;
+
+function archetypeIdleMotion(archetype: string, t: number, seed: number): { dx: number; dy: number } {
+  switch (archetype) {
+    case "orange chaos":
+      return { dx: Math.sin(t * 3.1 + seed) * 1.5, dy: -Math.max(0, Math.sin(t * 2.3 + seed)) * 4 };
+    case "rocket scout":
+      return { dx: Math.sin(t * 6 + seed) * 1.2, dy: Math.cos(t * 5.2 + seed) * 1.2 };
+    case "tree poet":
+      return { dx: Math.sin(t * 0.7 + seed) * 1.3, dy: -1.4 - Math.sin(t * 0.6) * 1.4 };
+    case "pond dreamer":
+      return { dx: Math.sin(t * 0.5 + seed) * 3, dy: Math.cos(t * 0.8) * 0.8 };
+    case "velcro heart":
+      return { dx: Math.sin(t * 1.1 + seed) * 1.2, dy: Math.sin(t * 1.3) * 0.6 };
+    case "shadow watcher":
+    default:
+      return { dx: 0, dy: Math.sin(t * 0.9 + seed) * 0.4 };
   }
 }
 
@@ -547,25 +598,16 @@ function findNearestPet(snapshot: GardenSnapshot, sceneX: number, sceneY: number
     .sort((left, right) => left.distance - right.distance)[0]?.pet;
 }
 
-const terrainMapCache = new Map<GardenZoneId, ReturnType<typeof buildTerrainMap>>();
+// buildTerrainMap caches per zone at the module level.
+const cachedTerrainMap = (zone: GardenZone) => buildTerrainMap(zone.id, zone);
 
-function cachedTerrainMap(zoneId: GardenZoneId) {
-  const cached = terrainMapCache.get(zoneId);
+function drawTerrainLayer(zone: GardenZone, nightAlpha: number) {
+  const zoneId = zone.id;
 
-  if (cached) {
-    return cached;
-  }
-
-  const terrain = buildTerrainMap(zoneId);
-  terrainMapCache.set(zoneId, terrain);
-  return terrain;
-}
-
-function drawTerrainLayer(zoneId: GardenZoneId, nightAlpha: number) {
   return (graphics: Graphics) => {
     graphics.clear();
 
-    const terrain = cachedTerrainMap(zoneId);
+    const terrain = cachedTerrainMap(zone);
 
     for (const tile of terrain.tiles) {
       const rect = tileRect(tile.x, tile.y);
@@ -631,11 +673,11 @@ function drawTerrainLayer(zoneId: GardenZoneId, nightAlpha: number) {
   };
 }
 
-function drawStructureLayer(zoneId: GardenZoneId, neonAlpha: number) {
+function drawStructureLayer(zone: GardenZone, neonAlpha: number) {
   return (graphics: Graphics) => {
     graphics.clear();
 
-    const terrain = cachedTerrainMap(zoneId);
+    const terrain = cachedTerrainMap(zone);
 
     for (const structure of terrain.structures) {
       const baseX = toSceneX(structure.x);
@@ -700,11 +742,11 @@ function drawStructureLayer(zoneId: GardenZoneId, neonAlpha: number) {
   };
 }
 
-function drawTerrainDetailLayer(zoneId: GardenZoneId) {
+function drawTerrainDetailLayer(zone: GardenZone) {
   return (graphics: Graphics) => {
     graphics.clear();
 
-    const terrain = cachedTerrainMap(zoneId);
+    const terrain = cachedTerrainMap(zone);
     const tileMap = new Map(terrain.tiles.map((tile) => [`${tile.x}:${tile.y}`, tile.type]));
 
     for (const tile of terrain.tiles) {
@@ -1016,7 +1058,6 @@ function PetSpriteNode({
   const gaitPhaseRef = useRef((petJitterOffset(pet.pet.id).x + 10) * 0.61);
   const motionClockRef = useRef(0);
   const frameIndexRef = useRef(-1);
-  const currentSpeedRef = useRef(0);
   const spritePath = pet.generation.worldSpritePath ?? "/generated/world-nyx.svg";
   const [frames, setFrames] = useState<PetTextureFrames | null>(null);
   const jitter = useMemo(() => petJitterOffset(pet.pet.id), [pet.pet.id]);
@@ -1089,10 +1130,11 @@ function PetSpriteNode({
     plannedTargetRef.current = { tileX: targetTileX, tileY: targetTileY, zoneId };
 
     if (!motionRef.current) {
-      // First sighting: appear in place, no walk-in.
+      // First sighting: appear in place (snapped off water/blocked), no walk-in.
+      const spawn = findNearestWalkableTile(zoneId, { tileX: targetTileX, tileY: targetTileY });
       motionRef.current = {
-        x: toSceneX(targetTileX),
-        y: toSceneY(targetTileY),
+        x: toSceneX(spawn.tileX),
+        y: toSceneY(spawn.tileY),
       };
       waypointsRef.current = [];
       return;
@@ -1118,9 +1160,10 @@ function PetSpriteNode({
     const nowMs = Date.now();
 
     if (!motionRef.current) {
+      const spawn = findNearestWalkableTile(zoneId, { tileX: targetTileX, tileY: targetTileY });
       motionRef.current = {
-        x: toSceneX(targetTileX),
-        y: toSceneY(targetTileY),
+        x: toSceneX(spawn.tileX),
+        y: toSceneY(spawn.tileY),
       };
     }
 
@@ -1176,8 +1219,6 @@ function PetSpriteNode({
       moved = true;
     }
 
-    currentSpeedRef.current = moved ? tilesPerSecond : 0;
-
     if (moved) {
       gaitPhaseRef.current += deltaSeconds * (4 + tilesPerSecond * 1.6);
     }
@@ -1195,6 +1236,9 @@ function PetSpriteNode({
           lastNoticeAtRef.current = nowMs;
           noticeUntilRef.current = nowMs + 2100;
         }
+      } else if (pet.personality.archetype === "shadow watcher") {
+        // Watchful: slowly sweep its gaze left and right when nobody's close.
+        facingRef.current = Math.sin(elapsedSeconds * 0.45 + jitter.y) >= 0 ? 1 : -1;
       }
     }
 
@@ -1205,10 +1249,17 @@ function PetSpriteNode({
     const scuffleShakeY =
       !moved && activity === "scuffle" ? Math.cos(elapsedSeconds * 29 + jitter.y) * 3.5 : 0;
 
+    // Personality body language while idle (never during walk/scuffle/sleep/hide).
+    const showIdleTell =
+      !moved && activity !== "scuffle" && activity !== "sleep" && activity !== "hide";
+    const idleTell = showIdleTell
+      ? archetypeIdleMotion(pet.personality.archetype, elapsedSeconds, jitter.x)
+      : ZERO_IDLE_MOTION;
+
     if (containerRef.current) {
-      containerRef.current.x = motion.x + jitter.x + scuffleShakeX;
+      containerRef.current.x = motion.x + jitter.x + scuffleShakeX + idleTell.dx;
       containerRef.current.y =
-        motion.y + jitter.y + activityIdleOffsetY(moved ? "idle" : activity) + idleBob + scuffleShakeY - hop;
+        motion.y + jitter.y + activityIdleOffsetY(moved ? "idle" : activity) + idleBob + scuffleShakeY - hop + idleTell.dy;
       containerRef.current.zIndex = motion.y;
     }
 
@@ -1797,7 +1848,7 @@ export function GardenCanvas({
     }, 1700);
   }, []);
 
-  const spawn = zoneSpawnTile[zoneId];
+  const spawn = zoneSpawnFor(zoneId);
   const playerRef = useRef<PlayerWorldState>({
     sceneX: toSceneX(spawn.tileX),
     sceneY: toSceneY(spawn.tileY),
@@ -1814,9 +1865,12 @@ export function GardenCanvas({
   useZoneAssetWarmup(zoneId, snapshot.pets);
 
   // Respawn the avatar when the zone changes (gate travel keeps its side).
+  // Custom areas carry their layout in zone data; register it here — before we
+  // snap the spawn tile — so a player-placed pond counts as unwalkable.
   useEffect(() => {
+    registerZoneTerrain(snapshot.zone);
     const pendingSpawn = pendingSpawnRef.current;
-    const spawnTile = pendingSpawn ?? zoneSpawnTile[zoneId];
+    const spawnTile = pendingSpawn ?? zoneSpawnFor(zoneId);
     const safeTile = findNearestWalkableTile(zoneId, spawnTile);
     pendingSpawnRef.current = null;
 
@@ -1835,6 +1889,8 @@ export function GardenCanvas({
       y: Math.max(0, Math.min(SCENE_HEIGHT - viewport.height, playerRef.current.sceneY - viewport.height / 2)),
     };
     setPlayerTile({ tileX: safeTile.tileX, tileY: safeTile.tileY });
+    // Respawn only on zone change — snapshot.zone identity churns every poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoneId]);
 
   // Track viewport size for camera clamping.
@@ -1990,9 +2046,14 @@ export function GardenCanvas({
       .slice(0, 2);
   }, [onCleanPoop, playerTile.tileX, playerTile.tileY, snapshot.objects, viewerId]);
 
-  const zoneRingIndex = ZONE_TRAVEL_RING.indexOf(zoneId);
-  const eastZoneId = ZONE_TRAVEL_RING[(zoneRingIndex + 1) % ZONE_TRAVEL_RING.length];
-  const westZoneId = ZONE_TRAVEL_RING[(zoneRingIndex + ZONE_TRAVEL_RING.length - 1) % ZONE_TRAVEL_RING.length];
+  // Walkable travel ring covers every zone the viewer can access.
+  const travelRing = useMemo(() => {
+    const ring = (zones ?? []).map((zone) => zone.id);
+    return ring.length > 0 && ring.includes(zoneId) ? ring : DEFAULT_TRAVEL_RING;
+  }, [zoneId, zones]);
+  const zoneRingIndex = Math.max(0, travelRing.indexOf(zoneId));
+  const eastZoneId = travelRing[(zoneRingIndex + 1) % travelRing.length];
+  const westZoneId = travelRing[(zoneRingIndex + travelRing.length - 1) % travelRing.length];
   const zoneNameById = useMemo(() => {
     const map = new Map<GardenZoneId, string>();
 
@@ -2177,12 +2238,12 @@ export function GardenCanvas({
             alt=""
             className="pointer-events-none block select-none object-cover opacity-45 [image-rendering:pixelated]"
             draggable={false}
-            src={backgroundScenePath[zoneId]}
+            src={zoneScenePath(zoneId)}
             style={{ height: `${SCENE_HEIGHT}px`, width: `${SCENE_WIDTH}px` }}
           />
           <div
             className="pointer-events-none absolute inset-0"
-            style={{ background: zoneAtmosphere[zoneId] }}
+            style={{ background: zoneAtmosphereFor(zoneId) }}
           />
           <div
             className="pointer-events-none absolute inset-0"
@@ -2201,11 +2262,16 @@ export function GardenCanvas({
         </div>
         <div className="absolute inset-0">
           {viewportElement ? (
-            <Application antialias={false} backgroundAlpha={0} resizeTo={viewportElement}>
+            <Application
+              antialias={false}
+              backgroundAlpha={0}
+              preference="webgpu"
+              resizeTo={viewportElement}
+            >
               <pixiContainer ref={cameraContainerRef}>
-                <pixiGraphics draw={drawTerrainLayer(zoneId, snapshot.world.overlayAlpha)} />
-                <pixiGraphics draw={drawTerrainDetailLayer(zoneId)} />
-                <pixiGraphics draw={drawStructureLayer(zoneId, snapshot.world.neonAlpha)} />
+                <pixiGraphics draw={drawTerrainLayer(snapshot.zone, snapshot.world.overlayAlpha)} />
+                <pixiGraphics draw={drawTerrainDetailLayer(snapshot.zone)} />
+                <pixiGraphics draw={drawStructureLayer(snapshot.zone, snapshot.world.neonAlpha)} />
                 <pixiGraphics draw={drawGrid()} />
                 <pixiGraphics
                   draw={drawTravelGate("west")}

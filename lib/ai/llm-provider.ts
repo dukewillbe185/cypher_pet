@@ -234,6 +234,30 @@ function isKimiK25Model(model: string | undefined) {
   return model?.trim().toLowerCase() === "kimi-k2.5";
 }
 
+/**
+ * Local single-model servers reject stale model ids after an upgrade
+ * (e.g. Qwen3.5 -> Qwen3.6). When they do, retrying without a model id
+ * makes them fall back to whatever model is actually loaded.
+ */
+export function isModelNotFoundResponse(status: number, bodyText: string) {
+  if (status !== 404 && status !== 400) {
+    return false;
+  }
+
+  return /not_found_error|model\s+'.*'\s+not\s+found|model_not_found/i.test(bodyText);
+}
+
+/** Removes reasoning traces that thinking-mode models prepend to replies. */
+export function stripThinkBlocks(content: string) {
+  const withoutClosed = content.replace(/<think>[\s\S]*?<\/think>/gi, "");
+
+  // An unterminated block means the visible answer never started.
+  const openIndex = withoutClosed.toLowerCase().indexOf("<think>");
+  const cleaned = openIndex >= 0 ? withoutClosed.slice(0, openIndex) : withoutClosed;
+
+  return cleaned.trim();
+}
+
 export function buildOpenAICompatibleChatRequestBody(params: {
   systemPrompt: string;
   messages: LLMChatMessage[];
@@ -358,7 +382,7 @@ class LocalQwenLLMProvider implements LLMProvider {
     const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
 
     try {
-      const response = await fetch(getChatCompletionsUrl(), {
+      let response = await fetch(getChatCompletionsUrl(), {
         method: "POST",
         headers: buildLLMHeaders(),
         body: JSON.stringify(buildOpenAICompatibleChatRequestBody({ ...params, stream: false })),
@@ -366,17 +390,41 @@ class LocalQwenLLMProvider implements LLMProvider {
       });
 
       if (!response.ok) {
-        throw new Error(`qwen-http-${response.status}:${await response.text()}`);
+        let errorText = await response.text();
+
+        if (params.model && isModelNotFoundResponse(response.status, errorText)) {
+          console.warn(
+            `[cypher-pet] LLM model "${params.model}" not found on server, retrying with the loaded model.`,
+          );
+          response = await fetch(getChatCompletionsUrl(), {
+            method: "POST",
+            headers: buildLLMHeaders(),
+            body: JSON.stringify(
+              buildOpenAICompatibleChatRequestBody({ ...params, model: undefined, stream: false }),
+            ),
+            signal: controller.signal,
+          });
+
+          // Report the retry's own failure, not the stale first-attempt body.
+          if (!response.ok) {
+            errorText = await response.text();
+          }
+        }
+
+        if (!response.ok) {
+          throw new Error(`qwen-http-${response.status}:${errorText.slice(0, 300)}`);
+        }
       }
 
       const raw = await response.text();
       const payload =
         extractJsonBlock<OpenAICompatibleResponse | MLXResponse>(raw) ??
         null;
-      const content =
+      const content = stripThinkBlocks(
         ("choices" in (payload ?? {})
           ? coerceContent((payload as OpenAICompatibleResponse).choices, "message")
-          : "") || coerceMLXContent(payload as MLXResponse | null);
+          : "") || coerceMLXContent(payload as MLXResponse | null),
+      );
 
       if (!content) {
         throw new Error("qwen-empty-response");
@@ -432,12 +480,30 @@ class LocalQwenLLMProvider implements LLMProvider {
     let content = "";
 
     try {
-      const response = await fetch(getChatCompletionsUrl(), {
+      let response = await fetch(getChatCompletionsUrl(), {
         method: "POST",
         headers: buildLLMHeaders(),
         body: JSON.stringify(buildOpenAICompatibleChatRequestBody({ ...params, stream: true })),
         signal: controller.signal,
       });
+
+      if (!response.ok && params.model) {
+        const errorText = await response.text();
+
+        if (isModelNotFoundResponse(response.status, errorText)) {
+          console.warn(
+            `[cypher-pet] LLM model "${params.model}" not found on server, retrying with the loaded model.`,
+          );
+          response = await fetch(getChatCompletionsUrl(), {
+            method: "POST",
+            headers: buildLLMHeaders(),
+            body: JSON.stringify(
+              buildOpenAICompatibleChatRequestBody({ ...params, model: undefined, stream: true }),
+            ),
+            signal: controller.signal,
+          });
+        }
+      }
 
       if (!response.ok || !response.body) {
         throw new Error(`qwen-http-${response.status}`);
@@ -501,15 +567,17 @@ class LocalQwenLLMProvider implements LLMProvider {
         }
       }
 
-      if (!content.trim()) {
+      const cleanedContent = stripThinkBlocks(content);
+
+      if (!cleanedContent) {
         throw new Error("qwen-empty-response");
       }
 
       return {
-        content: content.trim(),
+        content: cleanedContent,
         finishReason,
         elapsedMs: Date.now() - startedAt,
-        tokenCount: tokenCount || estimateTokenCount(content),
+        tokenCount: tokenCount || estimateTokenCount(cleanedContent),
         provider: "local-qwen",
         truncated: finishReason === "length",
         source: "llm" as const,

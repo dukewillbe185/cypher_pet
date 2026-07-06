@@ -16,7 +16,7 @@ import {
   executeLLMTask,
   type LLMExecutionMode,
 } from "@/lib/ai/rate-limiter";
-import { generateInnerVoice } from "@/lib/ai/inner-voice";
+import { generateInnerVoice, type InnerVoiceTrigger } from "@/lib/ai/inner-voice";
 import { decideSocialIntent } from "@/lib/ai/social-intent";
 import { generateSocialExchange, type SocialInteraction } from "@/lib/ai/social-chat";
 import { syncPetAutonomyState } from "@/lib/domain/autonomy";
@@ -40,6 +40,24 @@ import {
   ensureGrowthState,
   utcDayKey,
 } from "@/lib/domain/growth";
+import { commitAmbientBubble, pickAmbientCandidate } from "@/lib/domain/ambient-attention";
+import {
+  collectRecentSpokenLines,
+  collectSpeechMoment,
+  pickSliceFocusPetId,
+  type SpeechMoment,
+  type SpeechMomentTrigger,
+} from "@/lib/domain/pet-speech";
+import { buildOvernightRecapLines } from "@/lib/domain/notifications";
+import { createCustomZoneInStore, updateCustomZoneInStore } from "@/lib/domain/custom-zones";
+import { deletePetFromStore, setPetHomeInStore } from "@/lib/domain/pet-lifecycle";
+import {
+  canPetEnterZone,
+  canViewerAccessZone,
+  findZone,
+  isBuiltinZoneId,
+  listAccessibleZones,
+} from "@/lib/domain/zone-access";
 import {
   listGardenFactsForPet,
   listGardenLedgerEvents,
@@ -63,6 +81,8 @@ import type {
   DashboardPetCard,
   HomeSignalFeed,
   GardenZoneId,
+  GardenZoneVisibility,
+  CustomZoneElementKind,
   GardenEncounterWorldAction,
   LLMChatResult,
   OwnerAction,
@@ -83,8 +103,57 @@ import type {
   Visibility,
 } from "@/lib/types";
 
-export async function listGardenZones() {
-  return queryStore((store) => store.gardenZones);
+export async function listGardenZones(viewerId?: string) {
+  return queryStore((store) => listAccessibleZones(store, viewerId));
+}
+
+export async function createGardenZone(input: {
+  viewerId: string;
+  name: string;
+  visibility: GardenZoneVisibility;
+  elements: CustomZoneElementKind[];
+  petIds: string[];
+}) {
+  return mutateStore(async (store) => {
+    const owner = store.profiles.find((profile) => profile.id === input.viewerId);
+
+    if (!owner) {
+      throw new Error("not-found");
+    }
+
+    const result = createCustomZoneInStore(store, {
+      owner,
+      name: input.name,
+      visibility: input.visibility,
+      elements: input.elements,
+      petIds: input.petIds,
+    });
+
+    await advanceStoreToNow(store, new Date(), { llmMode: "off" });
+    return result;
+  });
+}
+
+export async function updateGardenZone(input: {
+  viewerId: string;
+  zoneId: string;
+  name?: string;
+  visibility?: GardenZoneVisibility;
+}) {
+  return mutateStore((store) => {
+    const owner = store.profiles.find((profile) => profile.id === input.viewerId);
+
+    if (!owner) {
+      throw new Error("not-found");
+    }
+
+    return updateCustomZoneInStore(store, {
+      owner,
+      zoneId: input.zoneId,
+      name: input.name,
+      visibility: input.visibility,
+    });
+  });
 }
 
 type WorldViewReadOptions = {
@@ -106,25 +175,30 @@ function getLatestSimulationLagMs(store: AppStore) {
   return Math.max(0, Date.now() - latestSimulatedAt);
 }
 
+// Reads within this window reuse the last simulation instead of re-running it
+// and persisting the whole store — polls arrive every ~3.5s from each client.
+const READ_FRESHNESS_WINDOW_MS = 2_500;
+
 async function readWorldView<T>(
   reader: (store: AppStore) => T | Promise<T>,
   options?: WorldViewReadOptions,
 ) {
-  if (env.gardenBackgroundTickEnabled) {
-    const snapshot = await queryStore(async (store) => {
-      if (getLatestSimulationLagMs(store) > BACKGROUND_TICK_FRESHNESS_WINDOW_MS) {
-        return { shouldAdvance: true as const };
-      }
-
-      return {
-        shouldAdvance: false as const,
-        value: await reader(store),
-      };
-    });
-
-    if (!snapshot.shouldAdvance) {
-      return snapshot.value;
+  const freshnessWindowMs = env.gardenBackgroundTickEnabled
+    ? BACKGROUND_TICK_FRESHNESS_WINDOW_MS
+    : READ_FRESHNESS_WINDOW_MS;
+  const snapshot = await queryStore(async (store) => {
+    if (getLatestSimulationLagMs(store) > freshnessWindowMs) {
+      return { shouldAdvance: true as const };
     }
+
+    return {
+      shouldAdvance: false as const,
+      value: await reader(store),
+    };
+  });
+
+  if (!snapshot.shouldAdvance) {
+    return snapshot.value;
   }
 
   return mutateStore(async (store) => {
@@ -240,6 +314,10 @@ export function applyOwnerPetCommandToStore(
 
   switch (input.command.type) {
     case "move_to_tile":
+      if (!canPetEnterZone(store, input.pet, input.command.zoneId)) {
+        throw new Error("这个区域是私密的，宠物进不去。");
+      }
+
       state.zoneId = input.command.zoneId;
       state.tileX = clampTileX(input.command.tileX);
       state.tileY = clampTileY(input.command.tileY);
@@ -266,6 +344,10 @@ export function applyOwnerPetCommandToStore(
 
       if (!targetObject) {
         throw new Error("target-object-not-found");
+      }
+
+      if (!canPetEnterZone(store, input.pet, targetObject.zoneId)) {
+        throw new Error("这个区域是私密的，宠物进不去。");
       }
 
       state.zoneId = targetObject.zoneId;
@@ -311,6 +393,10 @@ export function applyOwnerPetCommandToStore(
         throw new Error("target-pet-invalid");
       }
 
+      if (!canPetEnterZone(store, input.pet, targetState.zoneId)) {
+        throw new Error("对方在私密区域里，宠物过不去。");
+      }
+
       state.zoneId = targetState.zoneId;
       state.tileX = clampTileX(targetState.tileX + (input.pet.species === "dog" ? -1 : 1));
       state.tileY = clampTileY(targetState.tileY);
@@ -343,6 +429,10 @@ export function applyOwnerPetCommandToStore(
 
       if (targetPet.id === input.pet.id) {
         throw new Error("target-pet-invalid");
+      }
+
+      if (!canPetEnterZone(store, input.pet, targetState.zoneId)) {
+        throw new Error("对方在私密区域里，宠物过不去。");
       }
 
       state.zoneId = targetState.zoneId;
@@ -386,6 +476,10 @@ export function applyOwnerPetCommandToStore(
 
       if (targetPet.id === input.pet.id) {
         throw new Error("target-pet-invalid");
+      }
+
+      if (!canPetEnterZone(store, input.pet, targetState.zoneId)) {
+        throw new Error("对方在私密区域里，宠物过不去。");
       }
 
       state.zoneId = targetState.zoneId;
@@ -611,14 +705,33 @@ export async function getGardenSnapshot(input: {
   llmMode?: LLMExecutionMode;
 }) {
   return readWorldView(
-    (store) => buildGardenSnapshot(store, input.zoneId, input.viewerId),
+    (store) => {
+      const zone = findZone(store, input.zoneId);
+
+      if (zone && !canViewerAccessZone(zone, input.viewerId)) {
+        throw new Error("这个区域是私密的。");
+      }
+
+      return buildGardenSnapshot(store, input.zoneId, input.viewerId);
+    },
     { llmMode: input.llmMode ?? "off" },
   );
 }
 
+const MAX_PREVIEW_ZONES = 8;
+
 export async function getGardenPreview(viewerId?: string) {
+  // Built-ins first, then the viewer's own areas, then other public areas — so a
+  // user's own zone is never pushed out of the preview window by others' zones.
+  const previewRank = (zone: { id: GardenZoneId; ownerId?: string }) =>
+    isBuiltinZoneId(zone.id) ? 0 : viewerId && zone.ownerId === viewerId ? 1 : 2;
+
   return readWorldView(
-    (store) => store.gardenZones.map((zone) => buildGardenSnapshot(store, zone.id, viewerId)),
+    (store) =>
+      listAccessibleZones(store, viewerId)
+        .sort((left, right) => previewRank(left) - previewRank(right))
+        .slice(0, MAX_PREVIEW_ZONES)
+        .map((zone) => buildGardenSnapshot(store, zone.id, viewerId)),
     { llmMode: "off" },
   );
 }
@@ -1178,18 +1291,41 @@ export async function getPetMemoryView(input: { petId: string; userId?: string }
   }, { llmMode: "off" });
 }
 
-export async function getGardenLedger(input?: { zoneId?: GardenZoneId; participantId?: string }) {
-  return readWorldView((store) => ({
+export async function getGardenLedger(input?: {
+  zoneId?: GardenZoneId;
+  participantId?: string;
+  viewerId?: string;
+}) {
+  return readWorldView((store) => {
+    // Same privacy gate the snapshot/presence/events routes enforce: a viewer
+    // only ever sees ledger activity and facts for zones they can open.
+    const accessibleZoneIds = new Set(
+      listAccessibleZones(store, input?.viewerId).map((zone) => zone.id),
+    );
+
+    if (input?.zoneId && !accessibleZoneIds.has(input.zoneId)) {
+      return { events: [], facts: [] };
+    }
+
+    return {
       events: listGardenLedgerEvents(store, {
         zoneId: input?.zoneId,
         participantId: input?.participantId,
+        zoneIds: accessibleZoneIds,
         limit: 24,
       }),
       facts: store.gardenSemanticFacts
         .filter((fact) => !input?.participantId || fact.subjectId === input.participantId || fact.objectId === input.participantId)
+        // Drop facts pointing at a private zone the viewer can't reach.
+        .filter(
+          (fact) =>
+            !(fact.subjectType === "zone" && !accessibleZoneIds.has(fact.subjectId)) &&
+            !(fact.objectType === "zone" && fact.objectId != null && !accessibleZoneIds.has(fact.objectId)),
+        )
         .sort((left, right) => right.weight - left.weight)
         .slice(0, 24),
-    }), { llmMode: "off" });
+    };
+  }, { llmMode: "off" });
 }
 
 export async function refreshPetProfile(input: { petId: string }) {
@@ -1269,6 +1405,38 @@ export async function applyOwnerAction(input: {
   });
 }
 
+export async function setPetHome(input: {
+  viewerId: string;
+  petId: string;
+  zoneId: GardenZoneId | null;
+}) {
+  return mutateStore((store) => {
+    const owner = store.profiles.find((profile) => profile.id === input.viewerId);
+
+    if (!owner) {
+      throw new Error("not-found");
+    }
+
+    return setPetHomeInStore(store, {
+      owner,
+      petId: input.petId,
+      zoneId: input.zoneId,
+    });
+  });
+}
+
+export async function deletePetByOwner(input: { viewerId: string; petId: string }) {
+  return mutateStore((store) => {
+    const owner = store.profiles.find((profile) => profile.id === input.viewerId);
+
+    if (!owner) {
+      throw new Error("not-found");
+    }
+
+    return deletePetFromStore(store, { owner, petId: input.petId });
+  });
+}
+
 export async function cleanGardenPoop(input: { viewerId: string; objectId: string }) {
   return mutateStore(async (store) => {
     const viewer = store.profiles.find((profile) => profile.id === input.viewerId);
@@ -1294,6 +1462,10 @@ export async function recordGardenPresence(input: {
 
     if (!viewer) {
       throw new Error("not-found");
+    }
+
+    if (!canViewerAccessZone(findZone(store, input.zoneId), viewer.id)) {
+      throw new Error("这个区域是私密的。");
     }
 
     const now = new Date();
@@ -1365,24 +1537,231 @@ export async function recordGardenPresence(input: {
       }
 
       if (mostBondedPet) {
+        // The reunion message carries a real recap of the night, not a stock line.
+        const recapLines = buildOvernightRecapLines(store, viewer.id, now.getTime());
+        const recap = recapLines.length > 0 ? ` 你不在的时候：${recapLines.join("；")}` : "";
+
         store.notifications.unshift({
           id: randomUUID(),
           userId: viewer.id,
           kind: "system",
           petId: mostBondedPet.id,
-          body: `${mostBondedPet.name} 今天一直在花园里等你，刚才第一个发现你回来了。`,
+          body: `${mostBondedPet.name} 第一个发现你回来了。${recap}`.trim(),
           createdAt: nowIso,
         });
       }
     }
 
-    await advanceStoreToNow(store, now, { llmMode: "off" });
+    // Snapshot polls keep the world moving; only advance here if it's stale.
+    if (getLatestSimulationLagMs(store) > READ_FRESHNESS_WINDOW_MS) {
+      await advanceStoreToNow(store, now, { llmMode: "off" });
+    }
 
     return {
       presence: { ...presence },
       dailyReunion,
     };
   });
+}
+
+const AMBIENT_ZONE_COOLDOWN_MS = 1000 * 10;
+const AMBIENT_LLM_TIMEOUT_MS = 1000 * 25;
+const ambientZoneLastRunMs = new Map<string, number>();
+const ambientPetLastRunMs = new Map<string, number>();
+// Per-zone in-flight guard: one pending line per zone, so a player hopping
+// between zones doesn't get speech globally suppressed for ~25s.
+const ambientMomentInFlightZones = new Set<GardenZoneId>();
+
+/** Big moments (a spat, you feeding it) earn a quick reaction; idle musing waits. */
+function petSpeechCooldownMs(salience: number) {
+  if (salience >= 80) {
+    return 1000 * 18;
+  }
+  if (salience >= 55) {
+    return 1000 * 40;
+  }
+  return 1000 * 80;
+}
+
+function toInnerVoiceTrigger(trigger: SpeechMomentTrigger): InnerVoiceTrigger {
+  switch (trigger) {
+    case "conflict":
+    case "new_friendship":
+      return "social_encounter";
+    case "owner_action":
+    case "reunion":
+      return "owner_nearby";
+    case "mood_shift":
+      return "mood_change";
+    case "activity_change":
+      return "activity_change";
+    default:
+      return "random";
+  }
+}
+
+function speechEventBody(
+  petName: string,
+  moment: SpeechMoment,
+  kind: "thought" | "speech",
+  text: string,
+) {
+  const say = kind === "speech" ? "冒出一句" : "心里闪过一句";
+  switch (moment.trigger) {
+    case "conflict":
+      return `${petName}炸了毛似地${say}：「${text}」`;
+    case "new_friendship":
+      return `${petName}凑近了些，${say}：「${text}」`;
+    case "owner_action":
+    case "reunion":
+      return `${petName}看了你一眼，${say}：「${text}」`;
+    default:
+      return `${petName}${say}：「${text}」`;
+  }
+}
+
+/** Free to speak = here, un-frozen, awake, and not mid-bubble. */
+function isPetFreeToSpeak(store: AppStore, petId: string, zoneId: GardenZoneId, nowMs: number) {
+  const pet = store.pets.find((entry) => entry.id === petId);
+  const state = store.petStates.find((entry) => entry.petId === petId);
+
+  if (!pet || !state || pet.isFrozen || state.zoneId !== zoneId) {
+    return false;
+  }
+
+  if (state.activity === "sleep" || state.activity === "hide") {
+    return false;
+  }
+
+  return !(state.currentBubble && new Date(state.currentBubble.expiresAt).getTime() > nowMs);
+}
+
+/**
+ * Fire-and-forget speech generation, fully off the request path. Prefers the
+ * "slice" focus pet reacting to whatever is most dramatic for it right now — a
+ * spat, you feeding it, a reunion — spending the scarce local-model budget on
+ * high-salience moments; otherwise the nearest free pet just thinks out loud.
+ * The next snapshot poll picks the bubble up.
+ */
+export async function generatePetSpeech(input: { zoneId: GardenZoneId; viewerId: string }) {
+  const startedMs = Date.now();
+
+  if (ambientMomentInFlightZones.has(input.zoneId)) {
+    return null;
+  }
+
+  if (startedMs - (ambientZoneLastRunMs.get(input.zoneId) ?? 0) < AMBIENT_ZONE_COOLDOWN_MS) {
+    return null;
+  }
+
+  ambientMomentInFlightZones.add(input.zoneId);
+
+  try {
+    // Phase 1: pick who speaks and what about — no lock held while we do it.
+    const prepared = await queryStore((store) => {
+      const focusId = pickSliceFocusPetId(store);
+      let candidatePetId: string | null = null;
+      let moment: SpeechMoment | null = null;
+
+      // Drama first: the focus pet gets priority when it's here, free, and its
+      // most pressing moment has cooled down enough to voice again.
+      if (focusId && isPetFreeToSpeak(store, focusId, input.zoneId, startedMs)) {
+        const focusMoment = collectSpeechMoment(store, focusId, startedMs);
+        const lastRun = ambientPetLastRunMs.get(focusId) ?? 0;
+        if (startedMs - lastRun >= petSpeechCooldownMs(focusMoment.salience)) {
+          candidatePetId = focusId;
+          moment = focusMoment;
+        }
+      }
+
+      // Otherwise the nearest free pet thinks out loud (baseline ambient life).
+      if (!candidatePetId) {
+        const ambient = pickAmbientCandidate(store, {
+          zoneId: input.zoneId,
+          viewerId: input.viewerId,
+          nowMs: startedMs,
+          petCooldownUntil: (petId) => (ambientPetLastRunMs.get(petId) ?? 0) + petSpeechCooldownMs(20),
+        });
+        if (ambient) {
+          candidatePetId = ambient.petId;
+          moment = collectSpeechMoment(store, ambient.petId, startedMs);
+        }
+      }
+
+      if (!candidatePetId || !moment) {
+        return null;
+      }
+
+      const pet = store.pets.find((entry) => entry.id === candidatePetId);
+      const state = store.petStates.find((entry) => entry.petId === candidatePetId);
+      const owner = pet ? store.profiles.find((entry) => entry.id === pet.ownerId) : undefined;
+
+      if (!pet || !state || !owner) {
+        return null;
+      }
+
+      return {
+        pet,
+        state: structuredClone(state),
+        context: buildPersonaContextFromStore(store, pet, state, createWorldState(), owner),
+        moment,
+        avoidLines: collectRecentSpokenLines(store, candidatePetId, 6),
+      };
+    });
+
+    if (!prepared) {
+      // Nobody to voice — don't burn the cooldown; the next beat retries free.
+      return null;
+    }
+
+    // Spending model effort now: this is where the zone cooldown starts.
+    ambientZoneLastRunMs.set(input.zoneId, startedMs);
+
+    // Phase 2: let the model take its time — nobody is waiting on this.
+    const bubble = await generateInnerVoice(
+      prepared.pet,
+      prepared.state,
+      prepared.context,
+      toInnerVoiceTrigger(prepared.moment.trigger),
+      "cache-first",
+      {
+        timeoutMs: AMBIENT_LLM_TIMEOUT_MS,
+        cacheSalt: `speech-${Math.floor(startedMs / (1000 * 60 * 10))}`,
+        situation: prepared.moment.trigger === "idle" ? undefined : prepared.moment.situation,
+        avoidLines: prepared.avoidLines,
+      },
+    );
+
+    if (!bubble.text) {
+      return null;
+    }
+
+    // Phase 3: commit if the pet is still receptive.
+    const event = await mutateStore((store) =>
+      commitAmbientBubble(store, {
+        petId: prepared.pet.id,
+        zoneId: input.zoneId,
+        text: bubble.text,
+        kind: bubble.kind,
+        nowMs: Date.now(),
+        source: bubble.source,
+        body: speechEventBody(prepared.pet.name, prepared.moment, bubble.kind, bubble.text),
+      }),
+    );
+
+    if (event) {
+      ambientPetLastRunMs.set(prepared.pet.id, Date.now());
+    }
+
+    return event;
+  } catch (error) {
+    console.warn(
+      `[cypher-pet] pet speech failed: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+    return null;
+  } finally {
+    ambientMomentInFlightZones.delete(input.zoneId);
+  }
 }
 
 export async function applyEncounterWorldAction(input: {
@@ -2453,6 +2832,9 @@ async function generateInteractiveReply(
     });
 
     if (result.finishReason === "timeout" || result.timedOut || !result.content.trim()) {
+      console.warn(
+        `[cypher-pet] chat fell back to template reply (${result.timedOut ? "timeout" : "empty"}) — check the LLM server at LLM_BASE_URL.`,
+      );
       await hooks?.onFallback?.(result.timedOut ? "timeout" : "empty");
       return {
         reply: prepared.fallback.reply,
@@ -2523,6 +2905,9 @@ async function generateInteractiveReply(
       error instanceof Error && error.message
         ? `provider-error:${error.message}`
         : "provider-error";
+    console.warn(
+      `[cypher-pet] chat fell back to template reply (${fallbackReason.slice(0, 200)}) — check the LLM server at LLM_BASE_URL.`,
+    );
     await hooks?.onFallback?.(fallbackReason);
     return {
       reply: prepared.fallback.reply,
