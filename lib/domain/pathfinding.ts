@@ -1,6 +1,6 @@
 import { buildTerrainMap } from "@/lib/domain/terrain";
 import { WORLD_BOUNDS, WORLD_COLS, WORLD_ROWS } from "@/lib/domain/world";
-import type { GardenZoneId } from "@/lib/types";
+import type { GardenZone, GardenZoneId } from "@/lib/types";
 
 export interface TilePoint {
   tileX: number;
@@ -11,6 +11,20 @@ const MAX_EXPLORED_NODES = 4200;
 const BRIDGE_OPEN_RADIUS = 1;
 
 const walkabilityCache = new Map<GardenZoneId, Uint8Array>();
+const zoneTerrainRegistry = new Map<GardenZoneId, GardenZone>();
+
+/**
+ * Custom areas carry their layout in zone data; register it so walkability
+ * (e.g. a player-placed pond) is respected. Built-in zones need no priming.
+ */
+export function registerZoneTerrain(zone: GardenZone) {
+  const known = zoneTerrainRegistry.get(zone.id);
+
+  if (!known) {
+    zoneTerrainRegistry.set(zone.id, zone);
+    walkabilityCache.delete(zone.id);
+  }
+}
 
 function tileIndex(tileX: number, tileY: number) {
   return tileY * WORLD_COLS + tileX;
@@ -22,7 +36,7 @@ function inGrid(tileX: number, tileY: number) {
 
 function buildWalkabilityGrid(zoneId: GardenZoneId) {
   const grid = new Uint8Array(WORLD_COLS * WORLD_ROWS).fill(1);
-  const terrain = buildTerrainMap(zoneId);
+  const terrain = buildTerrainMap(zoneId, zoneTerrainRegistry.get(zoneId));
 
   for (const tile of terrain.tiles) {
     if (!inGrid(tile.x, tile.y)) {

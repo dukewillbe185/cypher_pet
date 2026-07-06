@@ -5,7 +5,7 @@ import { getGardenLedger } from "@/lib/repository";
 import { jsonError, jsonOk } from "@/lib/utils";
 
 const querySchema = z.object({
-  zoneId: z.enum(["orchard", "pond", "grove", "dog-run"]).optional(),
+  zoneId: z.string().min(1).max(64).optional(),
   participantId: z.string().optional(),
 });
 
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     participantId: url.searchParams.get("participantId") ?? undefined,
   });
 
-  const payload = await getGardenLedger(parsed);
+  const payload = await getGardenLedger({ ...parsed, viewerId: profile.id });
   return jsonOk(payload);
 }
 

@@ -5,7 +5,7 @@ import { getGardenSnapshot } from "@/lib/repository";
 import { jsonError, jsonOk } from "@/lib/utils";
 
 const schema = z.object({
-  zoneId: z.enum(["orchard", "pond", "grove", "dog-run"]).default("orchard"),
+  zoneId: z.string().min(1).max(64).default("orchard"),
 });
 
 export async function GET(request: Request) {

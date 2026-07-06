@@ -14,6 +14,8 @@ function snapshot(
       id: zoneId,
       name: zoneId,
       description: `${zoneId} description`,
+      accent: "#39ff14",
+      speciesBias: "all",
     },
     serverTime: now,
     world: {

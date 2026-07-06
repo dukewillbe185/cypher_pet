@@ -54,10 +54,13 @@ async function warmPetFrames(spritePath: string, species: Species) {
 export function useZoneAssetWarmup(zoneId: GardenZoneId, pets: GardenPetSnapshot[]) {
   useEffect(() => {
     for (const candidateZoneId of nearbyZones(zoneId)) {
+      // Custom areas reuse the grove backdrop; never warm an undefined path.
+      const scenePath = backgroundScenePath[candidateZoneId] ?? "/garden/scene-grove.svg";
+
       schedulePrefetch({
         key: `garden-background:${candidateZoneId}`,
         priority: candidateZoneId === zoneId ? "visible" : "idle",
-        run: () => warmImage(backgroundScenePath[candidateZoneId]),
+        run: () => warmImage(scenePath),
       });
     }
 

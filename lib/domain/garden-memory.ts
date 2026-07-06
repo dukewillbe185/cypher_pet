@@ -121,12 +121,22 @@ export function upsertGardenSemanticFact(
   return created;
 }
 
-export function listGardenLedgerEvents(store: AppStore, input?: { zoneId?: GardenZoneId; participantId?: string; limit?: number }) {
+export function listGardenLedgerEvents(
+  store: AppStore,
+  input?: {
+    zoneId?: GardenZoneId;
+    participantId?: string;
+    limit?: number;
+    /** Restrict to these zones (e.g. the viewer's accessible set) before the limit. */
+    zoneIds?: ReadonlySet<GardenZoneId>;
+  },
+) {
   store.gardenLedgerEvents ??= [];
   const limit = input?.limit ?? 12;
 
   return store.gardenLedgerEvents
     .filter((event) => !input?.zoneId || event.zoneId === input.zoneId)
+    .filter((event) => !input?.zoneIds || input.zoneIds.has(event.zoneId))
     .filter((event) => !input?.participantId || event.participants.includes(input.participantId))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, limit);

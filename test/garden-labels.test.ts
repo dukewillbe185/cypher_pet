@@ -65,7 +65,7 @@ const basePet = {
     actionEndsAt: "2026-06-28T00:00:20.000Z",
   },
   personality: {
-    archetype: "window hunter",
+    archetype: "shadow watcher",
     summary: "Alert and nosy.",
     curiosity: 88,
     sociability: 50,
@@ -145,7 +145,7 @@ describe("garden labels", () => {
         {
           otherPetId: "pet-3",
           otherPetName: "Patch",
-          status: "rival",
+          status: "enemy",
           affinity: 12,
           rivalry: 61,
           updatedAt: now,
@@ -155,7 +155,7 @@ describe("garden labels", () => {
 
     expect(relationshipPulse(pet)).toEqual({
       label: "Patch",
-      status: "rival",
+      status: "enemy",
       detail: "affinity 12 / rivalry 61",
       tone: "conflict",
     });

@@ -58,7 +58,27 @@ export type PetPersonalityArchetype =
   | "pond dreamer"
   | "rocket scout";
 
-export type GardenZoneId = "orchard" | "pond" | "grove" | "dog-run";
+/** Built-in zones plus player-created areas (`zone-<uuid>`). */
+export type GardenZoneId = string;
+export type BuiltinGardenZoneId = "orchard" | "pond" | "grove" | "dog-run";
+export type GardenZoneVisibility = "public" | "private";
+export type CustomZoneElementKind =
+  | "tree"
+  | "bush"
+  | "stone"
+  | "pond"
+  | "fountain"
+  | "lamp"
+  | "doghouse"
+  | "pet_bed"
+  | "rest_spot"
+  | "toy";
+
+export interface GardenZoneLayout {
+  /** Element kinds the creator picked; placement is derived deterministically. */
+  elements: CustomZoneElementKind[];
+  seed: string;
+}
 export type PetMood =
   | "happy"
   | "curious"
@@ -228,6 +248,8 @@ export interface Pet {
   activeGenerationId?: string;
   isFrozen: boolean;
   createdAt: string;
+  /** Settled home area: the pet lives here and returns when displaced. */
+  homeZoneId?: GardenZoneId;
 }
 
 export interface PetPersonality {
@@ -282,6 +304,12 @@ export interface GardenZone {
   description: string;
   accent: string;
   speciesBias: Species | "all";
+  /** Player-created areas carry an owner; built-in zones have none. */
+  ownerId?: string;
+  /** Missing visibility means public (all built-in zones). */
+  visibility?: GardenZoneVisibility;
+  layout?: GardenZoneLayout;
+  createdAt?: string;
 }
 
 export interface PetState {
@@ -291,6 +319,9 @@ export interface PetState {
   tileY: number;
   facing: Facing;
   mood: PetMood;
+  /** A charged moment (a spat, a reunion) can pin the mood until this time, so
+   * it visibly lingers instead of snapping back to whatever the stats derive. */
+  moodLockedUntil?: string;
   activity: PetActivity;
   energy: number;
   hunger: number;
@@ -332,6 +363,8 @@ export interface PetEvent {
     emotion: string;
   }>;
   narrationSource?: "template" | "llm";
+  /** For inner_voice events: the raw line the pet spoke, used for no-repeat. */
+  spokenText?: string;
 }
 
 export interface ChatMessage {

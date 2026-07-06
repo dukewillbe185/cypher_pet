@@ -53,7 +53,6 @@ function petSnapshot(
       createdAt: now,
       updatedAt: now,
     },
-    state,
     owner: {
       id: "owner-1",
       email: "owner@example.com",

@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 import { getViewerContext } from "@/lib/auth";
-import { listNarrativeEvents } from "@/lib/repository";
+import { listGardenZones, listNarrativeEvents } from "@/lib/repository";
 
 const querySchema = z.object({
-  zoneId: z.enum(["orchard", "pond", "grove", "dog-run"]).default("orchard"),
+  zoneId: z.string().min(1).max(64).default("orchard"),
 });
 
 export async function GET(request: Request) {
@@ -14,6 +14,11 @@ export async function GET(request: Request) {
   });
 
   const { profile } = await getViewerContext();
+  const accessibleZones = await listGardenZones(profile?.id);
+
+  if (!accessibleZones.some((zone) => zone.id === zoneId)) {
+    return Response.json({ error: "这个区域是私密的。" }, { status: 403 });
+  }
 
   const stream = new ReadableStream({
     async start(controller) {

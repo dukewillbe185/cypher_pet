@@ -1,5 +1,5 @@
 import { WORLD_COLS, WORLD_ROWS } from "@/lib/domain/world";
-import type { GardenZoneId } from "@/lib/types";
+import type { GardenZone, GardenZoneId } from "@/lib/types";
 
 export type TerrainTileType =
   | "grass"
@@ -75,7 +75,64 @@ function everyOtherBush(left: number, top: number, right: number, bottom: number
   return rectTiles("bush_grass", left, top, right, bottom).filter((tile) => (tile.x * 2 + tile.y) % 4 === 0);
 }
 
-export function buildTerrainMap(zoneId: GardenZoneId): TerrainMap {
+/**
+ * Terrain for a player-created area: cozy grass base, a path, livability
+ * structures, and a small pond when the creator picked one.
+ */
+function buildCustomTerrain(zoneId: GardenZoneId, zone?: GardenZone): TerrainMap {
+  const maxX = WORLD_COLS - 1;
+  const maxY = WORLD_ROWS - 1;
+  const tiles: TerrainTile[] = rectTiles("grass", 0, 0, maxX, maxY);
+  const hasPond = zone?.layout?.elements.includes("pond") ?? false;
+
+  tiles.push(...rectTiles("dirt_path", 12, 30, 37, 32));
+  tiles.push(...everyOtherFlower(6, 24, 14, 38));
+  tiles.push(...everyOtherFlower(34, 24, 42, 38));
+
+  if (hasPond) {
+    tiles.push(...ellipseTiles("water", 24, 19, 8, 6));
+    tiles.push(...ellipseTiles("lily", 23, 19, 5, 3).filter((tile) => (tile.x + tile.y) % 4 === 0));
+  }
+
+  const structures: TerrainStructure[] = [
+    { id: `${zoneId}-feeder`, x: 20, y: 35, kind: "feeding_station" },
+    { id: `${zoneId}-water-bowl`, x: 28, y: 35, kind: "water_bowl" },
+    { id: `${zoneId}-bench`, x: 33, y: 24, kind: "bench" },
+    { id: `${zoneId}-lamp-west`, x: 12, y: 20, kind: "lamp" },
+    { id: `${zoneId}-lamp-east`, x: 38, y: 20, kind: "lamp" },
+  ];
+
+  return { tiles, structures };
+}
+
+// Terrain is deterministic per zone (built-ins are static; custom layouts are
+// immutable once created), so cache it — the simulation asks for it on every
+// pet retarget and used to allocate ~2300 tiles each time.
+const terrainCache = new Map<string, TerrainMap>();
+
+export function buildTerrainMap(zoneId: GardenZoneId, zone?: GardenZone): TerrainMap {
+  const cacheKey = `${zoneId}:${zone?.layout?.seed ?? "static"}`;
+  const cached = terrainCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const terrain = computeTerrainMap(zoneId, zone);
+  terrainCache.set(cacheKey, terrain);
+  return terrain;
+}
+
+function computeTerrainMap(zoneId: GardenZoneId, zone?: GardenZone): TerrainMap {
+  if (
+    zoneId !== "orchard" &&
+    zoneId !== "pond" &&
+    zoneId !== "grove" &&
+    zoneId !== "dog-run"
+  ) {
+    return buildCustomTerrain(zoneId, zone);
+  }
+
   const maxX = WORLD_COLS - 1;
   const maxY = WORLD_ROWS - 1;
   const tiles: TerrainTile[] = rectTiles("grass", 0, 0, maxX, maxY);
