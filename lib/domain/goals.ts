@@ -87,6 +87,16 @@ export function ensurePetGoals(store: AppStore, pet: Pet, state: PetState, nowIs
 
   const goals: Array<{ type: PetGoalType; priority: number; reason: string; targetPetId?: string; targetZoneId?: PetGoal["targetZoneId"] }> = [];
 
+  // Settled pets that got displaced always want to head home first.
+  if (pet.homeZoneId && state.zoneId !== pet.homeZoneId) {
+    goals.push({
+      type: "move_to_zone",
+      priority: 88,
+      reason: `${pet.name} 想回自己的家。`,
+      targetZoneId: pet.homeZoneId,
+    });
+  }
+
   if (state.social <= 34) {
     goals.push({
       type: "seek_reassurance_from_owner",

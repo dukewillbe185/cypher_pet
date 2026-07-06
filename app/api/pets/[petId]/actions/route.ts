@@ -19,7 +19,7 @@ const commandSchema = z.object({
   command: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("move_to_tile"),
-      zoneId: z.enum(["orchard", "pond", "grove", "dog-run"]),
+      zoneId: z.string().min(1).max(64),
       tileX: z.number().int(),
       tileY: z.number().int(),
     }),
