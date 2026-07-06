@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Radar } from "lucide-react";
 
 import { ChatDrawer } from "@/components/chat/chat-drawer";
+import { CreateZonePanel } from "@/components/garden/create-zone-panel";
+import { MyPetsPanel } from "@/components/garden/my-pets-panel";
 import { AmbientEncounters } from "@/components/garden/ambient-encounters";
 import { buildAutonomyMapOverlays } from "@/components/garden/autonomy-map-overlays";
 import { AutonomyRoutePanel } from "@/components/garden/autonomy-route-panel";
@@ -45,6 +47,9 @@ export function GardenExperience({
   viewer: Profile | null;
 }) {
   const [activeZoneId, setActiveZoneId] = useState<GardenZoneId>(initialSnapshot.zone.id);
+  const [zoneList, setZoneList] = useState<GardenZone[]>(zones);
+  const [createZoneOpen, setCreateZoneOpen] = useState(false);
+  const [myPetsRefreshToken, setMyPetsRefreshToken] = useState(0);
   const [selectedPetId, setSelectedPetId] = useState<string | undefined>();
   const [selectedAutonomyRouteId, setSelectedAutonomyRouteId] = useState<string | undefined>();
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | undefined>();
@@ -57,8 +62,8 @@ export function GardenExperience({
   const isSwitchingZone = snapshot.zone.id !== activeZoneId;
   const isZoneLocked = isSwitchingZone || zoneState.isLoading;
   const activeZone = useMemo(
-    () => zones.find((zone) => zone.id === activeZoneId) ?? snapshot.zone,
-    [activeZoneId, snapshot.zone, zones],
+    () => zoneList.find((zone) => zone.id === activeZoneId) ?? snapshot.zone,
+    [activeZoneId, snapshot.zone, zoneList],
   );
   const selectedPet = snapshot.pets.find((entry) => entry.pet.id === selectedPetId);
   const selectedEncounter = snapshot.encounters.find((entry) => entry.id === selectedEncounterId);
@@ -84,7 +89,9 @@ export function GardenExperience({
     const report = async () => {
       const tile = playerTileRef.current;
 
-      if (!tile || disposed) {
+      // A hidden tab is not "being in the garden" — otherwise pets keep
+      // seeking a ghost while the player is off doing something else.
+      if (!tile || disposed || document.visibilityState === "hidden") {
         return;
       }
 
@@ -251,6 +258,87 @@ export function GardenExperience({
     playerTileRef.current = { tileX, tileY };
   }
 
+  function handleZoneCreated(zone: GardenZone) {
+    setZoneList((current) => [...current, zone]);
+    setCreateZoneOpen(false);
+    setMyPetsRefreshToken((token) => token + 1);
+    setError(null);
+    setSelectedAutonomyRouteId(undefined);
+    setSelectedEncounterId(undefined);
+    setSelectedPetId(undefined);
+    setActiveZoneId(zone.id);
+  }
+
+  async function handleToggleZoneVisibility() {
+    if (!viewer || activeZone.ownerId !== viewer.id) {
+      return;
+    }
+
+    const nextVisibility = (activeZone.visibility ?? "public") === "public" ? "private" : "public";
+
+    try {
+      setError(null);
+      const response = await fetch(`/api/garden/zones/${activeZone.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility: nextVisibility }),
+      });
+      const payload = await readJsonResponse<{ zone: GardenZone }>(response, "更新区域失败。");
+      setZoneList((current) =>
+        current.map((zone) => (zone.id === payload.zone.id ? payload.zone : zone)),
+      );
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : "更新区域失败。");
+    }
+  }
+
+  function handleLocatePet(petId: string, zoneId: GardenZoneId) {
+    setSelectedPetId(petId);
+    if (zoneId !== activeZoneId) {
+      switchZone(zoneId, { preserveSelection: true });
+    }
+  }
+
+  async function handleSetPetHome(petId: string, zoneId: GardenZoneId | null) {
+    try {
+      setError(null);
+      const response = await fetch(`/api/pets/${petId}/home`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zoneId }),
+      });
+      await readJsonResponse(response, "安排失败。");
+      await refreshCurrentZone();
+    } catch (homeError) {
+      setError(homeError instanceof Error ? homeError.message : "安排失败。");
+    }
+  }
+
+  async function handleSummonPet(petId: string) {
+    const tile = playerTileRef.current ?? { tileX: 24, tileY: 32 };
+
+    try {
+      setError(null);
+      const response = await fetch(`/api/pets/${petId}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          command: {
+            type: "move_to_tile",
+            zoneId: activeZoneId,
+            tileX: tile.tileX,
+            tileY: tile.tileY,
+          },
+        }),
+      });
+      const result = await readJsonResponse<PetCommandResult>(response, "召唤失败。");
+      handleWorldActionComplete(result);
+      await refreshCurrentZone();
+    } catch (summonError) {
+      setError(summonError instanceof Error ? summonError.message : "召唤失败。");
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Card className="space-y-4 overflow-visible p-4 sm:p-5">
@@ -261,7 +349,7 @@ export function GardenExperience({
             <p className="mt-1 text-sm leading-6 text-white/62">{activeZone.description}</p>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {zones.map((zone) => (
+            {zoneList.map((zone) => (
               <button
                 key={zone.id}
                 className={`ease-smooth motion-fast shrink-0 rounded-full border px-4 py-2 text-sm transition-[transform,background-color,border-color,color,opacity] ${
@@ -273,11 +361,39 @@ export function GardenExperience({
                 onClick={() => switchZone(zone.id)}
                 type="button"
               >
+                {zone.visibility === "private" ? "🔒 " : ""}
                 {isSwitchingZone && activeZoneId === zone.id ? "切换中..." : zone.name}
+                {viewer && zone.ownerId === viewer.id ? " ·我的" : ""}
               </button>
             ))}
+            {viewer ? (
+              <button
+                className="ease-smooth motion-fast shrink-0 rounded-full border border-dashed border-violet-300/40 bg-violet-300/[0.06] px-4 py-2 text-sm text-violet-100/80 transition-[transform,background-color,border-color,color] hover:border-violet-300/70 hover:text-violet-50"
+                data-testid="open-create-zone"
+                onClick={() => setCreateZoneOpen((open) => !open)}
+                type="button"
+              >
+                ＋ 开辟新区域
+              </button>
+            ) : null}
           </div>
         </div>
+
+        {createZoneOpen && viewer ? (
+          <CreateZonePanel onClose={() => setCreateZoneOpen(false)} onCreated={handleZoneCreated} />
+        ) : null}
+
+        {viewer && activeZone.ownerId === viewer.id ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-[18px] border border-violet-300/12 bg-violet-300/[0.04] px-4 py-2.5 text-sm text-violet-50/80">
+            <span>
+              这是你开辟的区域，当前
+              {(activeZone.visibility ?? "public") === "private" ? "仅自己的宠物可进" : "对所有宠物开放"}。
+            </span>
+            <Button onClick={handleToggleZoneVisibility} type="button" variant="ghost">
+              {(activeZone.visibility ?? "public") === "private" ? "改为公开" : "改为私密"}
+            </Button>
+          </div>
+        ) : null}
 
         <div className={`space-y-3 ${isSwitchingZone ? "smooth-fade" : ""}`}>
           <GardenCanvas
@@ -297,7 +413,7 @@ export function GardenExperience({
             travelLocked={isZoneLocked}
             viewerId={viewer?.id}
             viewerName={viewer?.displayName}
-            zones={zones}
+            zones={zoneList}
           />
           {selectedPet && viewer?.id === selectedPet.pet.ownerId ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-cyan-300/10 bg-cyan-300/[0.04] px-4 py-3 text-sm leading-6 text-cyan-50/78">
@@ -369,6 +485,18 @@ export function GardenExperience({
         </div>
 
         <div className="space-y-4 2xl:sticky 2xl:top-24 2xl:self-start">
+          {viewer ? (
+            <Card className="p-4">
+              <MyPetsPanel
+                activeZoneId={activeZoneId}
+                onLocatePet={handleLocatePet}
+                onSetHome={handleSetPetHome}
+                onSummonPet={handleSummonPet}
+                refreshToken={myPetsRefreshToken}
+                zones={zoneList}
+              />
+            </Card>
+          ) : null}
           <PetAutonomyHud
             onChat={() => setChatOpen(true)}
             onRefresh={refreshCurrentZone}

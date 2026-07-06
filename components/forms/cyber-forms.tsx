@@ -465,6 +465,59 @@ export function RegeneratePetSpriteForm({ petId }: { petId: string }) {
   );
 }
 
+export function DeletePetForm({ petId, petName }: { petId: string; petName: string }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const { error, handleFailure, resetStatus } = useApiForm();
+
+  async function confirmDelete() {
+    if (pending) {
+      return;
+    }
+
+    try {
+      resetStatus();
+      setPending(true);
+      const response = await fetch(`/api/pets/${petId}`, { method: "DELETE" });
+      await readJsonResponse(response, "删除失败。");
+      router.push("/me" as Route);
+      router.refresh();
+    } catch (deleteError) {
+      handleFailure(deleteError);
+      setPending(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-[18px] border border-rose-300/15 bg-rose-300/[0.04] p-4">
+      <p className="text-[10px] uppercase tracking-[0.22em] text-rose-200/60">Danger Zone</p>
+      {confirming ? (
+        <div className="space-y-3">
+          <p className="text-sm leading-6 text-rose-100/85">
+            确定让 {petName} 永远离开花园吗？它的状态、记忆和聊天记录都会被清除，无法恢复。
+          </p>
+          <div className="flex gap-2">
+            <Button disabled={pending} onClick={confirmDelete} type="button" variant="danger">
+              {pending ? "删除中..." : "确认删除"}
+            </Button>
+            <Button disabled={pending} onClick={() => setConfirming(false)} type="button" variant="ghost">
+              再想想
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button onClick={() => setConfirming(true)} type="button" variant="ghost">
+          <Trash2 aria-hidden="true" className="h-4 w-4" />
+          删除这只宠物
+        </Button>
+      )}
+      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+    </div>
+  );
+}
+
 export function OwnerActionButtons({
   petId,
   onDone,

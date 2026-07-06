@@ -14,7 +14,7 @@ type GardenPageProps = {
 export default async function GardenPage({ searchParams }: GardenPageProps) {
   const params = await searchParams;
   const { profile } = await getViewerContext();
-  const zones = await listGardenZones();
+  const zones = await listGardenZones(profile?.id);
   const requestedZone = params.zone as GardenZoneId | undefined;
   const zoneId = zones.some((zone) => zone.id === requestedZone) ? requestedZone! : "orchard";
   const [snapshot, worldSnapshots] = await Promise.all([
