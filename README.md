@@ -13,12 +13,19 @@
 - 上传照片时会在浏览器里采样主色调，生成的像素形象直接穿上宠物真实的毛色（宠物详情页也有"按照片配色重新生成"）
 - 喂食会让宠物当场停下来吃并冒台词气泡，抚摸/玩具/清理都有 emoji 反馈粒子从宠物头上升起
 - 便便是动态的（膀胱满了就会拉），走到任何一坨旁边都会浮出「🧹 铲屎」按钮，清自己宠物的还加羁绊
+- **自定义区域**：登录后可以「＋ 开辟新区域」——起名字、挑元素（果树/小池塘/灌木/喷泉/狗屋/宠物床…）、选哪些宠物搬进去；每人最多 4 个区域
+- 区域可设**公共 / 私密**并随时切换：私密区域只有自己的宠物能进，其他人的宠物不会漫游进来，别人也看不到这个区域
+- 花园右栏新增「我的宠物」面板：每只宠物的所在区域、成长阶段和羁绊一目了然，可一键定位或把它召到身边；宠物详情页支持彻底删除宠物（连带清除全部数据）
+- **定居系统**：面板里每只宠物有 🏠 按钮——在目标区域点一下，宠物就正式搬家并**一直住在那里**（旧的"想去某区"的执念会被清掉；被叫走后也会自己走回家）；再点一下恢复自由漫游。📣 召唤则是临时的串门
+- **注意力驱动的环境智能**：当你的化身站在某只宠物附近，它会偶尔通过 LLM"想出声"（气泡 + 事件），生成完全在请求路径之外进行，带 25s/区域 + 90s/宠物 冷却，不拖慢世界
+- 每日重逢通知会带上真实的"你不在的时候"回顾（宠物们昨晚真正做过的事）
+- 读路径做了写放大治理：snapshot / presence 在模拟足够新鲜（2.5s 内）时直接复用，不再每个请求都跑全量模拟 + 全量落盘
 
 ## 当前实现
 
 - `Next.js App Router + TypeScript + Tailwind CSS + Framer Motion`
 - `PixiJS + @pixi/react` 渲染公共像素花园
-- 本地 `Qwen 3.5 35B` OpenAI-compatible endpoint 负责聊天、独白、社交对话、动作选择和叙事
+- 本地 `Qwen 3.6 35B` OpenAI-compatible endpoint 负责聊天、独白、社交对话、动作选择和叙事
 - 默认可直接跑的 mock 数据层，数据文件在 `storage/mock-db.runtime.json`
 - 配置 `DATABASE_URL` 后，仓储层会自动切到 PostgreSQL 单表 runtime store
 - Supabase Auth 接口与 SQL migration 已落位
@@ -45,7 +52,10 @@
   - `GET /api/garden/snapshot`
   - `POST /api/garden/presence`
   - `POST /api/garden/objects/clean`
+  - `GET/POST /api/garden/zones`
+  - `PATCH /api/garden/zones/:zoneId`
   - `POST /api/pets/:petId/actions`
+  - `DELETE /api/pets/:petId`
   - `GET /api/pets/:petId/journal`
   - `GET /api/me/pets/status`
   - `GET /api/notifications`
@@ -93,7 +103,7 @@ npm run dev
 
 - Base URL: `http://127.0.0.1:8888/v1`
 - API Key: `1234`
-- Model ID: `Qwen3.5-35B-A3B-4bit`
+- Model ID: `Qwen3.6-35B-A3B-4bit`
 
 项目会向 `POST /chat/completions` 发请求，并自动带上 `Authorization: Bearer $LLM_API_KEY`。
 
@@ -102,10 +112,10 @@ npm run dev
 ```bash
 LLM_BASE_URL=http://127.0.0.1:8888/v1
 LLM_API_KEY=1234
-LLM_MODEL_CHAT=Qwen3.5-35B-A3B-4bit
-LLM_MODEL_NARRATION=Qwen3.5-35B-A3B-4bit
-LLM_MODEL_SOCIAL=Qwen3.5-35B-A3B-4bit
-LLM_MODEL_ACTION=Qwen3.5-35B-A3B-4bit
+LLM_MODEL_CHAT=Qwen3.6-35B-A3B-4bit
+LLM_MODEL_NARRATION=Qwen3.6-35B-A3B-4bit
+LLM_MODEL_SOCIAL=Qwen3.6-35B-A3B-4bit
+LLM_MODEL_ACTION=Qwen3.6-35B-A3B-4bit
 ```
 
 未配置 Supabase 时：

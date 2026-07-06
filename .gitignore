@@ -14,9 +14,10 @@
 /coverage
 
 # next.js
+# Keep every Next build dir ignored — Tailwind v4 scans all non-gitignored
+# files for class candidates, and compiled chunks corrupt the generated CSS.
 /.next/
-/.next-kimi/
-/.next-qwen/
+/.next-*/
 /out/
 
 # production

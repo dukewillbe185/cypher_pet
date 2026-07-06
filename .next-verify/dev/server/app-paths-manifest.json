@@ -1,7 +1,0 @@
-{
-  "/api/auth/magic-link/route": "app/api/auth/magic-link/route.js",
-  "/api/garden/events-stream/route": "app/api/garden/events-stream/route.js",
-  "/api/garden/presence/route": "app/api/garden/presence/route.js",
-  "/api/garden/snapshot/route": "app/api/garden/snapshot/route.js",
-  "/garden/page": "app/garden/page.js"
-}
