@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  collectDialogueOpportunity,
   collectRecentSpokenLines,
   collectSpeechMoment,
-  pickSliceFocusPetId,
+  dialoguePairKey,
+  rankSpeechCandidates,
 } from "@/lib/domain/pet-speech";
 import type { AppStore } from "@/lib/types";
 
@@ -30,28 +32,6 @@ function baseStore(): AppStore {
     gardenPresences: [],
   } as unknown as AppStore;
 }
-
-describe("pickSliceFocusPetId", () => {
-  it("picks the most socially entangled pet", () => {
-    const store = baseStore();
-    store.petRelationships = [
-      { id: "r1", petAId: "pet-b", petBId: "pet-c", affinity: 60, rivalry: 10, updatedAt: iso() },
-      { id: "r2", petAId: "pet-b", petBId: "pet-a", affinity: 40, rivalry: 20, updatedAt: iso() },
-    ] as AppStore["petRelationships"];
-    store.pairRelationshipModels = [
-      { petAId: "pet-b", petBId: "pet-c" },
-    ] as unknown as AppStore["pairRelationshipModels"];
-
-    expect(pickSliceFocusPetId(store)).toBe("pet-b");
-  });
-
-  it("still returns a pet when nobody has any history, and skips frozen pets", () => {
-    const store = baseStore();
-    store.pets[0] = { ...store.pets[0], isFrozen: true };
-    // pet-a is frozen, so the first eligible pet (pet-b) wins the empty tie.
-    expect(pickSliceFocusPetId(store)).toBe("pet-b");
-  });
-});
 
 describe("collectSpeechMoment", () => {
   it("prioritizes a fresh conflict over a lower-salience owner action", () => {
@@ -125,5 +105,309 @@ describe("collectRecentSpokenLines", () => {
     ] as AppStore["petEvents"];
 
     expect(collectRecentSpokenLines(store, "pet-a")).toEqual(["第二句", "第一句"]);
+  });
+});
+
+describe("rankSpeechCandidates", () => {
+  const cooldownOkFor = () => true;
+
+  it("a conflict across the map outranks an idle pet at the player's feet", () => {
+    const store = baseStore();
+    store.gardenPresences = [
+      { profileId: "owner-1", zoneId: "orchard", tileX: 11, tileY: 10, updatedAt: iso(-20_000) },
+    ] as AppStore["gardenPresences"];
+    store.petEvents = [
+      {
+        id: "e-scuffle",
+        petId: "pet-b",
+        relatedPetId: "pet-c",
+        zoneId: "orchard",
+        type: "scuffle",
+        body: "scuffle",
+        createdAt: iso(-2000),
+      },
+    ] as AppStore["petEvents"];
+
+    const ranked = rankSpeechCandidates(store, {
+      zoneId: "orchard",
+      viewerId: "owner-1",
+      nowMs: now,
+      cooldownOkFor,
+    });
+
+    expect(ranked[0]?.petId).toBe("pet-b");
+    expect(ranked[0]?.moment.trigger).toBe("conflict");
+
+    const petA = ranked.find((entry) => entry.petId === "pet-a");
+    expect(petA).toBeDefined();
+    expect(petA?.moment.trigger).toBe("idle");
+  });
+
+  it("idle musings need a fresh viewer presence nearby", () => {
+    const store = baseStore();
+
+    expect(
+      rankSpeechCandidates(store, { zoneId: "orchard", viewerId: "owner-1", nowMs: now, cooldownOkFor }),
+    ).toEqual([]);
+
+    store.gardenPresences = [
+      { profileId: "owner-1", zoneId: "orchard", tileX: 11, tileY: 10, updatedAt: iso(-20_000) },
+    ] as AppStore["gardenPresences"];
+
+    const ranked = rankSpeechCandidates(store, {
+      zoneId: "orchard",
+      viewerId: "owner-1",
+      nowMs: now,
+      cooldownOkFor,
+    });
+    // pet-b is idle too, but ~13 tiles away — outside the ambient radius.
+    expect(ranked.map((entry) => entry.petId)).toEqual(["pet-a"]);
+  });
+
+  it("stale presence disqualifies idle candidates", () => {
+    const store = baseStore();
+    store.gardenPresences = [
+      { profileId: "owner-1", zoneId: "orchard", tileX: 11, tileY: 10, updatedAt: iso(-1000 * 60 * 5) },
+    ] as AppStore["gardenPresences"];
+
+    expect(
+      rankSpeechCandidates(store, { zoneId: "orchard", viewerId: "owner-1", nowMs: now, cooldownOkFor }),
+    ).toEqual([]);
+  });
+
+  it("per-pet cooldown gate filters candidates", () => {
+    const store = baseStore();
+    store.gardenPresences = [
+      { profileId: "owner-1", zoneId: "orchard", tileX: 11, tileY: 10, updatedAt: iso(-20_000) },
+    ] as AppStore["gardenPresences"];
+
+    const ranked = rankSpeechCandidates(store, {
+      zoneId: "orchard",
+      viewerId: "owner-1",
+      nowMs: now,
+      cooldownOkFor: (petId) => petId !== "pet-a",
+    });
+
+    expect(ranked.find((entry) => entry.petId === "pet-a")).toBeUndefined();
+  });
+
+  it("own pets win salience ties", () => {
+    const store = baseStore();
+    store.pets = [
+      ...store.pets,
+      { id: "pet-d", ownerId: "owner-2", name: "Rex", isFrozen: false },
+    ] as AppStore["pets"];
+    store.petStates = [
+      ...store.petStates,
+      { petId: "pet-d", zoneId: "orchard", tileX: 12, tileY: 10, mood: "happy" },
+    ] as AppStore["petStates"];
+    store.gardenPresences = [
+      { profileId: "owner-1", zoneId: "orchard", tileX: 11, tileY: 10, updatedAt: iso(-20_000) },
+    ] as AppStore["gardenPresences"];
+
+    const ranked = rankSpeechCandidates(store, {
+      zoneId: "orchard",
+      viewerId: "owner-1",
+      nowMs: now,
+      cooldownOkFor,
+    });
+
+    // Both pets are idle and equidistant (1 tile) from the viewer; owner-1's
+    // own pet-a wins the tie over owner-2's pet-d.
+    expect(ranked.map((entry) => entry.petId)).toEqual(["pet-a", "pet-d"]);
+  });
+});
+
+describe("collectDialogueOpportunity", () => {
+  const isFree = () => true;
+  const pairCooldownOkFor = () => true;
+
+  it("stages a fresh conflict between two free pets", () => {
+    const store = baseStore();
+    store.petEvents = [
+      {
+        id: "e-scuffle",
+        petId: "pet-a",
+        relatedPetId: "pet-b",
+        zoneId: "orchard",
+        type: "scuffle",
+        body: "scuffle",
+        createdAt: iso(-2000),
+      },
+    ] as AppStore["petEvents"];
+
+    const opportunity = collectDialogueOpportunity(store, {
+      zoneId: "orchard",
+      nowMs: now,
+      isFree,
+      pairCooldownOkFor,
+    });
+
+    expect(opportunity?.trigger).toBe("conflict");
+    expect(opportunity?.petAId).toBe("pet-a");
+    expect(opportunity?.petBId).toBe("pet-b");
+    expect(opportunity?.salience).toBe(100);
+    expect(opportunity?.situation).toContain("Ash");
+    expect(opportunity?.situation).toContain("Nyx");
+    expect(opportunity?.sourceEventId).toBe("e-scuffle");
+  });
+
+  it("conflict beats a fresher friendly chat", () => {
+    const store = baseStore();
+    // petEvents is newest-first: the chat is fresher but the scuffle outranks it.
+    store.petEvents = [
+      {
+        id: "e-chat",
+        petId: "pet-a",
+        relatedPetId: "pet-c",
+        zoneId: "orchard",
+        type: "bonded",
+        body: "chat",
+        createdAt: iso(-1000),
+      },
+      {
+        id: "e-scuffle",
+        petId: "pet-a",
+        relatedPetId: "pet-b",
+        zoneId: "orchard",
+        type: "scuffle",
+        body: "scuffle",
+        createdAt: iso(-30_000),
+      },
+    ] as AppStore["petEvents"];
+
+    const opportunity = collectDialogueOpportunity(store, {
+      zoneId: "orchard",
+      nowMs: now,
+      isFree,
+      pairCooldownOkFor,
+    });
+
+    expect(opportunity?.trigger).toBe("conflict");
+    expect(opportunity?.petBId).toBe("pet-b");
+  });
+
+  it("skips the pair when either pet is busy", () => {
+    const store = baseStore();
+    store.petEvents = [
+      {
+        id: "e-scuffle",
+        petId: "pet-a",
+        relatedPetId: "pet-b",
+        zoneId: "orchard",
+        type: "scuffle",
+        body: "scuffle",
+        createdAt: iso(-2000),
+      },
+    ] as AppStore["petEvents"];
+
+    const opportunity = collectDialogueOpportunity(store, {
+      zoneId: "orchard",
+      nowMs: now,
+      isFree: (petId) => petId !== "pet-b",
+      pairCooldownOkFor,
+    });
+
+    expect(opportunity).toBeNull();
+  });
+
+  it("respects the pair cooldown", () => {
+    const store = baseStore();
+    store.petEvents = [
+      {
+        id: "e-scuffle",
+        petId: "pet-a",
+        relatedPetId: "pet-b",
+        zoneId: "orchard",
+        type: "scuffle",
+        body: "scuffle",
+        createdAt: iso(-2000),
+      },
+    ] as AppStore["petEvents"];
+
+    const opportunity = collectDialogueOpportunity(store, {
+      zoneId: "orchard",
+      nowMs: now,
+      isFree,
+      pairCooldownOkFor: () => false,
+    });
+
+    expect(opportunity).toBeNull();
+  });
+
+  it("warming bond turns a chat into new_friendship", () => {
+    const store = baseStore();
+    store.petEvents = [
+      {
+        id: "e-chat",
+        petId: "pet-a",
+        relatedPetId: "pet-b",
+        zoneId: "orchard",
+        type: "social_chat",
+        body: "chat",
+        createdAt: iso(-1000),
+      },
+    ] as AppStore["petEvents"];
+    store.petRelationships = [
+      { id: "r1", petAId: "pet-a", petBId: "pet-b", affinity: 60, rivalry: 10, updatedAt: iso() },
+    ] as AppStore["petRelationships"];
+
+    const warm = collectDialogueOpportunity(store, {
+      zoneId: "orchard",
+      nowMs: now,
+      isFree,
+      pairCooldownOkFor,
+    });
+    expect(warm?.trigger).toBe("new_friendship");
+    expect(warm?.salience).toBe(76);
+
+    store.petRelationships = [];
+    const cool = collectDialogueOpportunity(store, {
+      zoneId: "orchard",
+      nowMs: now,
+      isFree,
+      pairCooldownOkFor,
+    });
+    expect(cool?.trigger).toBe("encounter");
+    expect(cool?.salience).toBe(40);
+  });
+
+  it("ignores stale events and inner_voice noise", () => {
+    const store = baseStore();
+    store.petEvents = [
+      {
+        id: "e-old",
+        petId: "pet-a",
+        relatedPetId: "pet-b",
+        zoneId: "orchard",
+        type: "scuffle",
+        body: "old",
+        createdAt: iso(-1000 * 60 * 10),
+      },
+    ] as AppStore["petEvents"];
+    expect(
+      collectDialogueOpportunity(store, { zoneId: "orchard", nowMs: now, isFree, pairCooldownOkFor }),
+    ).toBeNull();
+
+    store.petEvents = [
+      {
+        id: "e-inner",
+        petId: "pet-a",
+        relatedPetId: "pet-b",
+        zoneId: "orchard",
+        type: "inner_voice",
+        body: "…",
+        createdAt: iso(-1000),
+      },
+    ] as AppStore["petEvents"];
+    expect(
+      collectDialogueOpportunity(store, { zoneId: "orchard", nowMs: now, isFree, pairCooldownOkFor }),
+    ).toBeNull();
+  });
+});
+
+describe("dialoguePairKey", () => {
+  it("is order-independent", () => {
+    expect(dialoguePairKey("pet-b", "pet-a")).toBe(dialoguePairKey("pet-a", "pet-b"));
   });
 });

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  AMBIENT_RADIUS_TILES,
-  commitAmbientBubble,
-  pickAmbientCandidate,
-} from "@/lib/domain/ambient-attention";
+import { AMBIENT_BUBBLE_LIFETIME_MS, commitAmbientBubble } from "@/lib/domain/ambient-attention";
 import { buildOvernightRecapLines } from "@/lib/domain/notifications";
 import { seedStore } from "@/lib/mock/seed";
 import type { AppStore } from "@/lib/types";
@@ -38,73 +34,6 @@ function nearestOwnPetSetup(store: AppStore) {
 
   return { pet, state };
 }
-
-describe("pickAmbientCandidate", () => {
-  it("picks the nearest own pet next to the player", () => {
-    const store = cloneStore();
-    const { pet } = nearestOwnPetSetup(store);
-
-    const candidate = pickAmbientCandidate(store, {
-      zoneId: "orchard",
-      viewerId: "profile-luna",
-      nowMs: Date.now(),
-      petCooldownUntil: () => 0,
-    });
-
-    expect(candidate?.petId).toBe(pet.id);
-    expect(candidate?.ownedByViewer).toBe(true);
-  });
-
-  it("returns nothing without fresh presence in the zone", () => {
-    const store = cloneStore();
-    nearestOwnPetSetup(store);
-    store.gardenPresences![0].updatedAt = new Date(Date.now() - 1000 * 60 * 5).toISOString();
-
-    expect(
-      pickAmbientCandidate(store, {
-        zoneId: "orchard",
-        viewerId: "profile-luna",
-        nowMs: Date.now(),
-        petCooldownUntil: () => 0,
-      }),
-    ).toBeNull();
-  });
-
-  it("skips pets that are asleep, bubbled, cooling down, or too far", () => {
-    const store = cloneStore();
-    const { pet, state } = nearestOwnPetSetup(store);
-    const nowMs = Date.now();
-    const base = {
-      zoneId: "orchard",
-      viewerId: "profile-luna",
-      nowMs,
-      petCooldownUntil: () => 0,
-    };
-
-    state.activity = "sleep";
-    expect(pickAmbientCandidate(store, base)?.petId).not.toBe(pet.id);
-    state.activity = "idle";
-
-    state.currentBubble = {
-      text: "…",
-      kind: "thought",
-      expiresAt: new Date(nowMs + 5000).toISOString(),
-    };
-    expect(pickAmbientCandidate(store, base)?.petId).not.toBe(pet.id);
-    state.currentBubble = undefined;
-
-    expect(
-      pickAmbientCandidate(store, {
-        ...base,
-        petCooldownUntil: (petId) => (petId === pet.id ? nowMs + 60_000 : 0),
-      })?.petId,
-    ).not.toBe(pet.id);
-
-    state.tileX = 20 + AMBIENT_RADIUS_TILES + 30;
-    const farCandidate = pickAmbientCandidate(store, base);
-    expect(farCandidate?.petId).not.toBe(pet.id);
-  });
-});
 
 describe("commitAmbientBubble", () => {
   it("writes the bubble and an llm-tagged inner voice event", () => {
@@ -160,6 +89,64 @@ describe("commitAmbientBubble", () => {
         source: "llm",
       }),
     ).toBeNull();
+  });
+
+  it("carries relatedPetId for dialogue turns", () => {
+    const store = cloneStore();
+    const { pet, state } = nearestOwnPetSetup(store);
+    const nowMs = Date.now();
+
+    const event = commitAmbientBubble(store, {
+      petId: pet.id,
+      zoneId: "orchard",
+      text: "你先别说话。",
+      kind: "speech",
+      nowMs,
+      source: "llm",
+      relatedPetId: "pet-x",
+    });
+
+    expect(event?.relatedPetId).toBe("pet-x");
+
+    state.currentBubble = undefined;
+    const secondEvent = commitAmbientBubble(store, {
+      petId: pet.id,
+      zoneId: "orchard",
+      text: "轮到我了。",
+      kind: "speech",
+      nowMs: nowMs + AMBIENT_BUBBLE_LIFETIME_MS + 1000,
+      source: "llm",
+    });
+
+    expect(secondEvent).not.toBeNull();
+    expect(secondEvent?.relatedPetId).toBeUndefined();
+  });
+
+  it("force-replaces an active bubble for staged dialogue turns", () => {
+    const store = cloneStore();
+    const { pet, state } = nearestOwnPetSetup(store);
+    const nowMs = Date.now();
+
+    state.currentBubble = {
+      text: "无关紧要的碎碎念",
+      kind: "thought",
+      expiresAt: new Date(nowMs + 5000).toISOString(),
+    };
+
+    const event = commitAmbientBubble(store, {
+      petId: pet.id,
+      zoneId: "orchard",
+      text: "挠你，活该！",
+      kind: "speech",
+      nowMs,
+      source: "llm",
+      relatedPetId: "pet-other",
+      force: true,
+    });
+
+    expect(event).not.toBeNull();
+    expect(event!.relatedPetId).toBe("pet-other");
+    expect(state.currentBubble?.text).toBe("挠你，活该！");
   });
 });
 

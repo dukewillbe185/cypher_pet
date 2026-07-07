@@ -1,4 +1,5 @@
-import type { AppStore, OwnerAction } from "@/lib/types";
+import { AMBIENT_PRESENCE_FRESH_MS, AMBIENT_RADIUS_TILES } from "@/lib/domain/ambient-attention";
+import type { AppStore, GardenZoneId, OwnerAction } from "@/lib/types";
 
 /** How far back a world signal still reads as "just happened" for speech. */
 export const SPEECH_SIGNAL_WINDOW_MS = 1000 * 75;
@@ -91,50 +92,227 @@ function ownerActionSituation(action: OwnerAction, ownerName = "主人"): string
 }
 
 /**
- * The "slice" pet: whichever un-frozen pet is most entangled in the garden's
- * social web (relationship models + relationships + recent shared history), so
- * the scarce real-speech budget lands where the most drama can happen. Falls
- * back to the lexicographically-first pet when nobody has any history yet.
+ * Presence for dialogue RESERVATION: here, un-frozen and awake — an active
+ * bubble doesn't disqualify, it just means "wait a beat". Without this laxer
+ * check, solo lines ping-pong between a feuding pair (bubble 9s vs zone beat
+ * 10s) and the two are never simultaneously quiet enough to stage the talk.
  */
-export function pickSliceFocusPetId(store: AppStore): string | null {
-  const scores = new Map<string, number>();
-  const bump = (petId: string | undefined, amount: number) => {
-    if (!petId) {
-      return;
-    }
-    scores.set(petId, (scores.get(petId) ?? 0) + amount);
-  };
+export function isPetPresentAndAwake(
+  store: AppStore,
+  petId: string,
+  zoneId: GardenZoneId,
+): boolean {
+  const pet = store.pets.find((entry) => entry.id === petId);
+  const state = store.petStates.find((entry) => entry.petId === petId);
 
-  for (const model of store.pairRelationshipModels ?? []) {
-    bump(model.petAId, 3);
-    bump(model.petBId, 3);
-  }
-  for (const rel of store.petRelationships ?? []) {
-    bump(rel.petAId, 2);
-    bump(rel.petBId, 2);
-  }
-  for (const event of store.gardenLedgerEvents ?? []) {
-    for (const participant of event.participants) {
-      bump(participant, 1);
-    }
+  if (!pet || !state || pet.isFrozen || state.zoneId !== zoneId) {
+    return false;
   }
 
-  let bestId: string | null = null;
-  let bestScore = -1;
+  return state.activity !== "sleep" && state.activity !== "hide";
+}
+
+/** Free to speak = here, un-frozen, awake, and not mid-bubble. */
+export function isPetFreeToSpeak(
+  store: AppStore,
+  petId: string,
+  zoneId: GardenZoneId,
+  nowMs: number,
+): boolean {
+  const pet = store.pets.find((entry) => entry.id === petId);
+  const state = store.petStates.find((entry) => entry.petId === petId);
+
+  if (!pet || !state || pet.isFrozen || state.zoneId !== zoneId) {
+    return false;
+  }
+
+  if (state.activity === "sleep" || state.activity === "hide") {
+    return false;
+  }
+
+  return !(state.currentBubble && new Date(state.currentBubble.expiresAt).getTime() > nowMs);
+}
+
+export interface RankedSpeechCandidate {
+  petId: string;
+  moment: SpeechMoment;
+  /** Tiles to the viewer's avatar; null when the viewer isn't here (or stale). */
+  distanceToViewer: number | null;
+  ownedByViewer: boolean;
+}
+
+/**
+ * Every pet in the zone competes for the scarce real-speech budget on the
+ * strength of its current moment: a scuffle across the map outranks an idle
+ * pet at the player's feet. Idle-tier moments still require the viewer close
+ * by — background pets shouldn't burn model budget musing to nobody.
+ */
+export function rankSpeechCandidates(
+  store: AppStore,
+  input: {
+    zoneId: GardenZoneId;
+    viewerId: string;
+    nowMs: number;
+    /** Repository-side cooldown gate (in-memory last-spoke clock). */
+    cooldownOkFor: (petId: string, salience: number) => boolean;
+  },
+): RankedSpeechCandidate[] {
+  const presence = store.gardenPresences?.find(
+    (entry) => entry.profileId === input.viewerId && entry.zoneId === input.zoneId,
+  );
+  const presenceFresh =
+    presence && input.nowMs - new Date(presence.updatedAt).getTime() <= AMBIENT_PRESENCE_FRESH_MS;
+
+  const candidates: RankedSpeechCandidate[] = [];
 
   for (const pet of store.pets) {
-    if (pet.isFrozen) {
+    if (!isPetFreeToSpeak(store, pet.id, input.zoneId, input.nowMs)) {
       continue;
     }
 
-    const score = scores.get(pet.id) ?? 0;
-    if (score > bestScore || (score === bestScore && bestId !== null && pet.id < bestId)) {
-      bestScore = score;
-      bestId = pet.id;
+    const state = store.petStates.find((entry) => entry.petId === pet.id);
+    if (!state) {
+      continue;
+    }
+
+    const distanceToViewer = presenceFresh
+      ? Math.hypot(state.tileX - presence.tileX, state.tileY - presence.tileY)
+      : null;
+
+    const moment = collectSpeechMoment(store, pet.id, input.nowMs);
+
+    // Idle musings are for the player's ears only.
+    if (moment.trigger === "idle") {
+      if (distanceToViewer === null || distanceToViewer > AMBIENT_RADIUS_TILES) {
+        continue;
+      }
+    }
+
+    if (!input.cooldownOkFor(pet.id, moment.salience)) {
+      continue;
+    }
+
+    candidates.push({
+      petId: pet.id,
+      moment,
+      distanceToViewer,
+      ownedByViewer: pet.ownerId === input.viewerId,
+    });
+  }
+
+  return candidates.sort((left, right) => {
+    if (left.moment.salience !== right.moment.salience) {
+      return right.moment.salience - left.moment.salience;
+    }
+    if (left.ownedByViewer !== right.ownedByViewer) {
+      return left.ownedByViewer ? -1 : 1;
+    }
+    const leftDistance = left.distanceToViewer ?? Number.POSITIVE_INFINITY;
+    const rightDistance = right.distanceToViewer ?? Number.POSITIVE_INFINITY;
+    if (leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+    return left.petId < right.petId ? -1 : 1;
+  });
+}
+
+export type DialogueTrigger = "conflict" | "new_friendship" | "encounter";
+
+export interface DialogueOpportunity {
+  trigger: DialogueTrigger;
+  /** Pair-level scene description handed to the dialogue director prompt. */
+  situation: string;
+  salience: number;
+  /** The event's protagonist — opens the exchange. */
+  petAId: string;
+  petBId: string;
+  sourceEventId: string;
+}
+
+/** Stable map key for a pet pair, order-independent. */
+export function dialoguePairKey(petAId: string, petBId: string): string {
+  return [petAId, petBId].sort().join("|");
+}
+
+const DIALOGUE_SALIENCE: Record<DialogueTrigger, number> = {
+  conflict: TRIGGER_SALIENCE.conflict,
+  new_friendship: TRIGGER_SALIENCE.new_friendship,
+  encounter: TRIGGER_SALIENCE.activity_change,
+};
+
+/**
+ * The freshest two-pet event worth staging as an overheard exchange: both
+ * pets still here and free to talk, the pair not recently voiced. Returns the
+ * highest-salience opportunity (newest wins ties) or null when the zone has
+ * no fresh two-pet drama.
+ */
+export function collectDialogueOpportunity(
+  store: AppStore,
+  input: {
+    zoneId: GardenZoneId;
+    nowMs: number;
+    isFree: (petId: string) => boolean;
+    pairCooldownOkFor: (petAId: string, petBId: string) => boolean;
+  },
+): DialogueOpportunity | null {
+  const nameOf = (id: string) => store.pets.find((entry) => entry.id === id)?.name ?? "另一只宠物";
+
+  let best: DialogueOpportunity | null = null;
+
+  // petEvents is newest-first, so the first hit per salience tier is freshest.
+  for (const event of store.petEvents) {
+    if (!event.relatedPetId || event.petId === event.relatedPetId) {
+      continue;
+    }
+    if (event.type === "inner_voice" || !withinWindow(event.createdAt, input.nowMs)) {
+      continue;
+    }
+
+    let trigger: DialogueTrigger;
+    if (event.type === "scuffle" || event.type === "chased") {
+      trigger = "conflict";
+    } else if (event.type === "bonded" || event.type === "social_chat") {
+      trigger = isWarmingBond(store, event.petId, event.relatedPetId) ? "new_friendship" : "encounter";
+    } else {
+      continue;
+    }
+
+    const salience = DIALOGUE_SALIENCE[trigger];
+    if (best && salience <= best.salience) {
+      continue;
+    }
+
+    if (!input.isFree(event.petId) || !input.isFree(event.relatedPetId)) {
+      continue;
+    }
+    if (!input.pairCooldownOkFor(event.petId, event.relatedPetId)) {
+      continue;
+    }
+
+    const nameA = nameOf(event.petId);
+    const nameB = nameOf(event.relatedPetId);
+    const situation =
+      trigger === "conflict"
+        ? `${nameA} 和 ${nameB} 刚闹了一场不愉快，两边火气都还没消。`
+        : trigger === "new_friendship"
+          ? `${nameA} 和 ${nameB} 刚才处得很好，正想多聊两句。`
+          : `${nameA} 和 ${nameB} 刚打了个照面，停下来寒暄。`;
+
+    best = {
+      trigger,
+      situation,
+      salience,
+      petAId: event.petId,
+      petBId: event.relatedPetId,
+      sourceEventId: event.id,
+    };
+
+    if (best.trigger === "conflict") {
+      break;
     }
   }
 
-  return bestId;
+  return best;
 }
 
 /** Recent lines the pet actually said, newest first — used to avoid repeats. */

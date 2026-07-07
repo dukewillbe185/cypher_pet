@@ -40,14 +40,17 @@ import {
   ensureGrowthState,
   utcDayKey,
 } from "@/lib/domain/growth";
-import { commitAmbientBubble, pickAmbientCandidate } from "@/lib/domain/ambient-attention";
+import { commitAmbientBubble } from "@/lib/domain/ambient-attention";
 import {
+  collectDialogueOpportunity,
   collectRecentSpokenLines,
-  collectSpeechMoment,
-  pickSliceFocusPetId,
+  dialoguePairKey,
+  isPetPresentAndAwake,
+  rankSpeechCandidates,
   type SpeechMoment,
   type SpeechMomentTrigger,
 } from "@/lib/domain/pet-speech";
+import { generatePetDialogue, type DialogueParticipant } from "@/lib/ai/pet-dialogue";
 import { buildOvernightRecapLines } from "@/lib/domain/notifications";
 import { createCustomZoneInStore, updateCustomZoneInStore } from "@/lib/domain/custom-zones";
 import { deletePetFromStore, setPetHomeInStore } from "@/lib/domain/pet-lifecycle";
@@ -90,6 +93,7 @@ import type {
   Pet,
   PetActivity,
   PetDetailsView,
+  PetEvent,
   PetGeneration,
   PetPhotoPalette,
   PetGoalType,
@@ -1566,8 +1570,15 @@ export async function recordGardenPresence(input: {
 
 const AMBIENT_ZONE_COOLDOWN_MS = 1000 * 10;
 const AMBIENT_LLM_TIMEOUT_MS = 1000 * 25;
+/** A pair that just talked stays quiet together for a while. */
+const PAIR_DIALOGUE_COOLDOWN_MS = 1000 * 60 * 3;
+/** Gap between dialogue turns; > bubble lifetime (9s) minus one gap so turn 3 lands after turn 1 expired. */
+const DIALOGUE_TURN_GAP_MS = 1000 * 5;
 const ambientZoneLastRunMs = new Map<string, number>();
 const ambientPetLastRunMs = new Map<string, number>();
+const dialoguePairLastRunMs = new Map<string, number>();
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 // Per-zone in-flight guard: one pending line per zone, so a player hopping
 // between zones doesn't get speech globally suppressed for ~25s.
 const ambientMomentInFlightZones = new Set<GardenZoneId>();
@@ -1620,28 +1631,30 @@ function speechEventBody(
   }
 }
 
-/** Free to speak = here, un-frozen, awake, and not mid-bubble. */
-function isPetFreeToSpeak(store: AppStore, petId: string, zoneId: GardenZoneId, nowMs: number) {
-  const pet = store.pets.find((entry) => entry.id === petId);
-  const state = store.petStates.find((entry) => entry.petId === petId);
-
-  if (!pet || !state || pet.isFrozen || state.zoneId !== zoneId) {
-    return false;
-  }
-
-  if (state.activity === "sleep" || state.activity === "hide") {
-    return false;
-  }
-
-  return !(state.currentBubble && new Date(state.currentBubble.expiresAt).getTime() > nowMs);
-}
+type PreparedSpeech =
+  | {
+      kind: "dialogue";
+      situation: string;
+      sourceEventId: string;
+      a: DialogueParticipant;
+      b: DialogueParticipant;
+      avoidLines: string[];
+    }
+  | {
+      kind: "solo";
+      pet: Pet;
+      state: PetState;
+      context: PersonaContext;
+      moment: SpeechMoment;
+      avoidLines: string[];
+    };
 
 /**
- * Fire-and-forget speech generation, fully off the request path. Prefers the
- * "slice" focus pet reacting to whatever is most dramatic for it right now — a
- * spat, you feeding it, a reunion — spending the scarce local-model budget on
- * high-salience moments; otherwise the nearest free pet just thinks out loud.
- * The next snapshot poll picks the bubble up.
+ * Fire-and-forget speech generation, fully off the request path. Every pet in
+ * the zone competes on the salience of its current moment; when the hottest
+ * moment involves two free pets, one model call stages an overheard exchange
+ * (turns committed a beat apart) instead of a monologue. The next snapshot
+ * poll picks the bubbles up.
  */
 export async function generatePetSpeech(input: { zoneId: GardenZoneId; viewerId: string }) {
   const startedMs = Date.now();
@@ -1657,55 +1670,91 @@ export async function generatePetSpeech(input: { zoneId: GardenZoneId; viewerId:
   ambientMomentInFlightZones.add(input.zoneId);
 
   try {
-    // Phase 1: pick who speaks and what about — no lock held while we do it.
-    const prepared = await queryStore((store) => {
-      const focusId = pickSliceFocusPetId(store);
-      let candidatePetId: string | null = null;
-      let moment: SpeechMoment | null = null;
-
-      // Drama first: the focus pet gets priority when it's here, free, and its
-      // most pressing moment has cooled down enough to voice again.
-      if (focusId && isPetFreeToSpeak(store, focusId, input.zoneId, startedMs)) {
-        const focusMoment = collectSpeechMoment(store, focusId, startedMs);
-        const lastRun = ambientPetLastRunMs.get(focusId) ?? 0;
-        if (startedMs - lastRun >= petSpeechCooldownMs(focusMoment.salience)) {
-          candidatePetId = focusId;
-          moment = focusMoment;
+    // Phase 1: stage the scene — dialogue beats monologue at equal drama.
+    const prepared = await queryStore((store): PreparedSpeech | null => {
+      const world = createWorldState();
+      const participantFor = (petId: string): DialogueParticipant | null => {
+        const pet = store.pets.find((entry) => entry.id === petId);
+        const state = pet ? store.petStates.find((entry) => entry.petId === petId) : undefined;
+        const owner = pet ? store.profiles.find((entry) => entry.id === pet.ownerId) : undefined;
+        if (!pet || !state || !owner) {
+          return null;
         }
+        return {
+          pet,
+          state: structuredClone(state),
+          context: buildPersonaContextFromStore(store, pet, state, world, owner),
+        };
+      };
+
+      // Reservation-lax scan: a pending bubble on either side means "hold the
+      // pair for the exchange", not "give up and monologue over each other".
+      const opportunity = collectDialogueOpportunity(store, {
+        zoneId: input.zoneId,
+        nowMs: startedMs,
+        isFree: (petId) => isPetPresentAndAwake(store, petId, input.zoneId),
+        pairCooldownOkFor: (petAId, petBId) =>
+          startedMs - (dialoguePairLastRunMs.get(dialoguePairKey(petAId, petBId)) ?? 0) >=
+          PAIR_DIALOGUE_COOLDOWN_MS,
+      });
+
+      let ranked = rankSpeechCandidates(store, {
+        zoneId: input.zoneId,
+        viewerId: input.viewerId,
+        nowMs: startedMs,
+        cooldownOkFor: (petId, salience) =>
+          startedMs - (ambientPetLastRunMs.get(petId) ?? 0) >= petSpeechCooldownMs(salience),
+      });
+
+      if (opportunity) {
+        const soloTop = ranked[0] ?? null;
+
+        // Dialogue needs no quiet window: staged turns force-replace whatever
+        // the pair was musing about (the sim's own chatter otherwise keeps at
+        // least one of them mid-bubble forever).
+        if (!soloTop || opportunity.salience >= soloTop.moment.salience) {
+          const a = participantFor(opportunity.petAId);
+          const b = participantFor(opportunity.petBId);
+          if (a && b) {
+            return {
+              kind: "dialogue",
+              situation: opportunity.situation,
+              sourceEventId: opportunity.sourceEventId,
+              a,
+              b,
+              avoidLines: [
+                ...collectRecentSpokenLines(store, opportunity.petAId, 3),
+                ...collectRecentSpokenLines(store, opportunity.petBId, 3),
+              ],
+            };
+          }
+        }
+
+        // Outranked by hotter solo drama this beat: keep the pair out of the
+        // solo pool anyway so monologues don't cannibalize the exchange.
+        ranked = ranked.filter(
+          (candidate) =>
+            candidate.petId !== opportunity.petAId && candidate.petId !== opportunity.petBId,
+        );
       }
 
-      // Otherwise the nearest free pet thinks out loud (baseline ambient life).
-      if (!candidatePetId) {
-        const ambient = pickAmbientCandidate(store, {
-          zoneId: input.zoneId,
-          viewerId: input.viewerId,
-          nowMs: startedMs,
-          petCooldownUntil: (petId) => (ambientPetLastRunMs.get(petId) ?? 0) + petSpeechCooldownMs(20),
-        });
-        if (ambient) {
-          candidatePetId = ambient.petId;
-          moment = collectSpeechMoment(store, ambient.petId, startedMs);
-        }
-      }
-
-      if (!candidatePetId || !moment) {
+      const solo = ranked[0] ?? null;
+      if (!solo) {
         return null;
       }
 
-      const pet = store.pets.find((entry) => entry.id === candidatePetId);
-      const state = store.petStates.find((entry) => entry.petId === candidatePetId);
-      const owner = pet ? store.profiles.find((entry) => entry.id === pet.ownerId) : undefined;
-
-      if (!pet || !state || !owner) {
+      const participant = participantFor(solo.petId);
+      if (!participant) {
         return null;
       }
 
       return {
-        pet,
-        state: structuredClone(state),
-        context: buildPersonaContextFromStore(store, pet, state, createWorldState(), owner),
-        moment,
-        avoidLines: collectRecentSpokenLines(store, candidatePetId, 6),
+        kind: "solo",
+        pet: participant.pet,
+        state: participant.state,
+        context: participant.context,
+        moment: solo.moment,
+        avoidLines: collectRecentSpokenLines(store, solo.petId, 6),
       };
     });
 
@@ -1717,13 +1766,20 @@ export async function generatePetSpeech(input: { zoneId: GardenZoneId; viewerId:
     // Spending model effort now: this is where the zone cooldown starts.
     ambientZoneLastRunMs.set(input.zoneId, startedMs);
 
+    if (prepared.kind === "dialogue") {
+      return await stageDialogue(prepared, input.zoneId);
+    }
+
     // Phase 2: let the model take its time — nobody is waiting on this.
+    // "blocking" is deliberate: cache-first would return the template
+    // immediately on a cache miss and only warm the cache in the background,
+    // which is how every drama line used to come out canned.
     const bubble = await generateInnerVoice(
       prepared.pet,
       prepared.state,
       prepared.context,
       toInnerVoiceTrigger(prepared.moment.trigger),
-      "cache-first",
+      "blocking",
       {
         timeoutMs: AMBIENT_LLM_TIMEOUT_MS,
         cacheSalt: `speech-${Math.floor(startedMs / (1000 * 60 * 10))}`,
@@ -1762,6 +1818,66 @@ export async function generatePetSpeech(input: { zoneId: GardenZoneId; viewerId:
   } finally {
     ambientMomentInFlightZones.delete(input.zoneId);
   }
+}
+
+/**
+ * Runs the model once for the whole exchange, then lands the turns a beat
+ * apart so the player reads a conversation, not a wall. A turn that can't
+ * commit (pet wandered off, bubble raced in) ends the exchange cleanly.
+ */
+async function stageDialogue(
+  prepared: Extract<PreparedSpeech, { kind: "dialogue" }>,
+  zoneId: GardenZoneId,
+) {
+  const turns = await generatePetDialogue(prepared.a, prepared.b, {
+    situation: prepared.situation,
+    sourceEventId: prepared.sourceEventId,
+    timeoutMs: AMBIENT_LLM_TIMEOUT_MS,
+    avoidLines: prepared.avoidLines,
+  });
+
+  if (!turns) {
+    return null;
+  }
+
+  const nameOf = (petId: string) =>
+    petId === prepared.a.pet.id ? prepared.a.pet.name : prepared.b.pet.name;
+
+  let lastEvent: PetEvent | null = null;
+
+  for (const [index, turn] of turns.entries()) {
+    if (index > 0) {
+      await sleep(DIALOGUE_TURN_GAP_MS);
+    }
+
+    const otherId = turn.petId === prepared.a.pet.id ? prepared.b.pet.id : prepared.a.pet.id;
+    const event = await mutateStore((store) =>
+      commitAmbientBubble(store, {
+        petId: turn.petId,
+        zoneId,
+        text: turn.text,
+        kind: "speech",
+        nowMs: Date.now(),
+        source: "llm",
+        body: `${nameOf(turn.petId)} 冲着 ${nameOf(otherId)} 说：「${turn.text}」`,
+        relatedPetId: otherId,
+        force: true,
+      }),
+    );
+
+    if (!event) {
+      break;
+    }
+
+    lastEvent = event;
+    ambientPetLastRunMs.set(turn.petId, Date.now());
+  }
+
+  if (lastEvent) {
+    dialoguePairLastRunMs.set(dialoguePairKey(prepared.a.pet.id, prepared.b.pet.id), Date.now());
+  }
+
+  return lastEvent;
 }
 
 export async function applyEncounterWorldAction(input: {
